@@ -24,6 +24,13 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'px4_base = drone_ros2_advanced.px4_base:main',
+            'drone_controller = drone_ros2_advanced.drone_controller:main',
+            'keyboard_control = drone_ros2_advanced.keyboard_control:main',
+            'keyboard_control_v2 = drone_ros2_advanced.keyboard_control_v2:main',
+            'aruco_detector = drone_ros2_advanced.aruco_detector:main',
+            'precision_land_ab = drone_ros2_advanced.precision_land_ab:main',
+            'keyboard_control_ab = drone_ros2_advanced.keyboard_control_ab:main',
         ],
     },
 )
