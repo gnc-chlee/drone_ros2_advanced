@@ -26,6 +26,7 @@ setup(
     entry_points={
         'console_scripts': [
             # ── 새 커리큘럼 2주차: 노드 기초 + 키보드 제어 ───────
+            'first_node = drone_ros2_advanced.first_node:main',
             'position_listener = drone_ros2_advanced.position_listener:main',
             'keyboard_control = drone_ros2_advanced.keyboard_control:main',
 
