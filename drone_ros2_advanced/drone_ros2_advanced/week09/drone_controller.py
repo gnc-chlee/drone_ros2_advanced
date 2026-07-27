@@ -17,7 +17,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 from px4_msgs.msg import VehicleLocalPosition
 
-from .px4_base import PX4Base, PX4_QOS
+from ..px4_base import PX4Base, PX4_QOS
 
 
 # ================================================================

@@ -1,12 +1,17 @@
 # drone_ros2_advanced
 
-사이버대학교 **드론로봇프로그래밍심화(ROS2)** 실습 패키지
+세종사이버대학교 드론로봇융합학과 **로봇운영체제(ROS2)응용** 실습 패키지 (2026-2학기)
 
-## 환경
-- Ubuntu 22.04
-- ROS2 Humble
-- PX4 Autopilot
-- Gazebo 시뮬레이션
+## 환경 (버전 고정)
+| 구성요소 | 버전 |
+|----------|------|
+| OS | Ubuntu 22.04 |
+| ROS2 | Humble |
+| PX4 | v1.16.0 |
+| px4_msgs | v1.16.0 (PX4와 동일 태그) |
+| Gazebo | Harmonic |
+| QGroundControl | v4.4.5 (v5는 Ubuntu 22.04 미지원) |
+| 통신 브리지 | uXRCE-DDS |
 
 ## 설치 방법
 ```bash
@@ -14,14 +19,13 @@ cd ~/ros2_ws/src
 git clone https://github.com/gnc-chlee/drone_ros2_advanced.git
 cd ~/ros2_ws
 colcon build --packages-select drone_ros2_advanced
-source ~/.bashrc
+source install/setup.bash
 ```
 
 추가 파이썬 패키지 (해당 주차에 설치):
 ```bash
-pip install folium        # 5주차
-pip install flask         # 6주차
-pip install ultralytics   # 14주차
+pip install opencv-python   # 5주차~ (비전 실습)
+pip install ultralytics     # 14주차 (YOLO)
 ```
 
 ## 실습 코드는 두 가지 버전!
@@ -33,28 +37,27 @@ pip install ultralytics   # 14주차
 
 전반부에는 raw로 원리를 눈으로 확인하고, 뒤로 갈수록 base를 사용합니다.
 코드에서 `[복붙 영역]`이라고 표시된 부분은 **복사해서 쓰고 원리만 이해**하면 됩니다.
+비전 노드(감지기 등 드론 제어와 무관한 노드)는 raw/base 구분이 없습니다.
 
 ## 커리큘럼 & 실습 코드
 
 | 주차 | 내용 | 실행 명령 (`ros2 run drone_ros2_advanced ...`) |
 |------|------|------|
-| 1주차 | 기초 복습 (offboard, 단일 position 이동) / PX4 + Gazebo 환경 재점검 | `w01_takeoff_raw` / `w01_takeoff_base` |
-| 2주차 | 다중 position 이동으로 확장 / ROS2 토픽·서비스·액션 복습 | `w02_multi_raw` / `w02_multi_base` |
-| 3주차 | 다중 Waypoint 비행 / Waypoint 리스트 yaml 파일로 관리 | `w03_yaml_raw` / `w03_yaml_base` |
-| 4주차 | 도착 판정 로직 (허용 오차 범위) / 미션 완료 후 자동 착륙 | `w04_mission_raw` / `w04_mission_base` |
-| 5주차 | GPS ↔ Local NED 좌표계 이해 / Folium 기반 지도 UI | `w05_gps_viewer`, `w05_map_demo` |
-| 6주차 | 지도 클릭 → ROS2 토픽으로 waypoint 전송 연동 | `w06_map_server` + `w06_goto_raw`/`w06_goto_base` |
+| 1주차 | PX4-ROS2 개요 / PX4 SITL 개발환경 구축 | - |
+| 2주차 | PX4-ROS2 연동 / 키보드 제어 노드 실습 | `first_node`, `position_listener`, `keyboard_control` |
+| 3주차 | 단일 Waypoint / 다중 Waypoint 비행 설계 | `w03_takeoff_*`, `w03_multi_*`, `w03_yaml_*`, `w03_mission_*` |
+| 4주차 | Gazebo World 구조와 SDF / 커스텀 World 실습 | (추가 예정) |
+| 5주차 | ROS2 카메라 토픽과 OpenCV / ArUco 마커 인식 | `w05_camera_viewer`, `w05_contour`, `w05_aruco` |
+| 6주차 | 마커 기준 오차 계산과 제어 / 정밀착륙 노드 | `w06_center_error`, `w06_keyboard_v2`, `w06_precision_land` |
 | 7주차 | **중간고사** | - |
-| 8주차 | OpenCV(contour) 복습 / Gazebo 카메라 → ROS2 image 토픽 | `w08_camera_viewer`, `w08_contour` |
-| 9주차 | PX4 드론 적용 차이점 / 카메라 기반 드론 제어 개념 | `w09_center_error` |
-| 10주차 | Haar Cascade 얼굴 인식 / 얼굴 위치 → 드론 이동 명령 변환 | `w10_face_detector`, `w10_face_command` |
-| 11주차 | 화면 중앙 기준 오차 계산 / 비례 제어 개념 | `w11_p_control` |
-| 12주차 | 얼굴 인식 + offboard 연동 / Following 비행 구현 | `w12_follow_raw` / `w12_follow_base` |
-| 13주차 | Following 안정화 튜닝 / 얼굴 없을 때 호버링 처리 | `w13_stable_raw` / `w13_stable_base` |
-| 14주차 | YOLOv8n 소개 / Haar Cascade vs YOLO 비교 / 사람 감지 데모 | `w14_yolo`, `w14_haar_vs_yolo` |
+| 8주차 | OpenCV DNN 기반 객체 인식 / 사람 인식 노드 | `w08_face_detector` (DNN판 추가 예정) |
+| 9주차 | 사람 인식·추종 비행 제어 설계 / 추종 비행 실습 | `w09_face_command`, `w09_p_control`, `w09_follow_*` |
+| 10주차 | 거리 센서 개념 / LiDAR 고도 데이터 활용 | (추가 예정) |
+| 11주차 | 장애물 감지 원리 / 회피 비행 노드 | (추가 예정) |
+| 12주차 | 상태머신 기반 미션 설계 / 모드 전환 로직 | (추가 예정) |
+| 13주차 | 통합 시나리오 설계 / 통합 미션 구현·디버깅 | `w13_stable_raw` / `w13_stable_base` |
+| 14주차 | 통합 미션 시연 / 심화 주제 소개 (RL, YOLO) | `w14_yolo`, `w14_haar_vs_yolo` |
 | 15주차 | **기말고사** | - |
-
-※ 비전 노드(8~11, 14주차 검출기)는 드론 제어와 무관하므로 raw/base 구분이 없습니다.
 
 ## 기본 실행 순서 (비행 실습 공통)
 ```bash
@@ -65,7 +68,8 @@ cd ~/PX4-Autopilot && make px4_sitl gz_x500
 MicroXRCEAgent udp4 -p 8888
 
 # 터미널 3: 실습 노드
-ros2 run drone_ros2_advanced w01_takeoff_raw
+source ~/ros2_ws/install/setup.bash
+ros2 run drone_ros2_advanced position_listener
 ```
 
 ## 폴더 구조
@@ -74,15 +78,19 @@ drone_ros2_advanced/
 ├── config/waypoints.yaml      # 3주차~ waypoint 미션 설정
 └── drone_ros2_advanced/
     ├── px4_base.py            # PX4Base 클래스 (base 버전의 부모)
-    ├── week01/ ~ week06/      # 전반부: Waypoint 미션 비행
-    └── week08/ ~ week14/      # 후반부: 비전 기반 Following
+    ├── week02/                # 노드 기초 + 키보드 제어
+    ├── week03/                # 단일·다중 Waypoint 비행
+    ├── week05/                # 카메라 · OpenCV · ArUco
+    ├── week06/                # 오차 제어 · 정밀착륙
+    ├── week08/                # 객체 인식
+    ├── week09/                # 사람 추종 비행
+    ├── week13/                # 추종 안정화 (통합 미션)
+    ├── week14/                # 심화 (YOLO)
+    └── extras/                # 구 커리큘럼 GPS/지도 자료 (참고용, folium·flask 필요)
 ```
-
-## 실습 내용
-1. **Waypoint 미션 비행** - 다중 waypoint 자동 비행 + 지도 클릭 연동
-2. **얼굴 인식 Following** - Haar Cascade 기반 얼굴 추적 비행
-3. **YOLO 맛보기** - YOLOv8n 사람 감지 데모 (CPU 가능)
+※ week04(Gazebo World), week10~12(LiDAR·회피·상태머신)는 교안 제작 진도에 맞춰 추가됩니다.
 
 ## 참고
-- 기초 과목 저장소: [drone_ros2_basic](https://github.com/gnc-chlee)
+- 트러블슈팅: Gazebo 화면이 검게 나오면 `export LIBGL_ALWAYS_SOFTWARE=1` (VM 환경)
+- 비전 실습(5주차~)은 카메라 렌더링이 필요하므로 GPU가 있는 네이티브 Ubuntu 권장
 - YOLOv8n은 CPU 환경에서도 동작 가능 (저사양 PC 대응)
