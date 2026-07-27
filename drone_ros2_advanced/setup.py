@@ -25,9 +25,12 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            # ── 새 커리큘럼 2주차: 노드 기초 + 키보드 제어 ───────
+            'position_listener = drone_ros2_advanced.position_listener:main',
+            'keyboard_control = drone_ros2_advanced.keyboard_control:main',
+
             # ── 기존 노드 ────────────────────────────────────────
             'drone_controller = drone_ros2_advanced.drone_controller:main',
-            'keyboard_control = drone_ros2_advanced.keyboard_control:main',
             'keyboard_control_v2 = drone_ros2_advanced.keyboard_control_v2:main',
             'aruco_detector = drone_ros2_advanced.aruco_detector:main',
             'precision_land_ab = drone_ros2_advanced.precision_land_ab:main',

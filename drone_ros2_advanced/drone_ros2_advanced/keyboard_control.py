@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : keyboard_control_raw.py
+# File    : keyboard_control.py
 # Author  : Choonghyun Lee (gnc-chlee)
-# Date    : 2026-06-01
-# Version : 1.0.0
+# Date    : 2026-07-27
+# Version : 2.1.0
 #
 # Description:
-#   키보드 드론 제어 노드 (Raw 버전 - px4_base 미사용)
-#   PX4 uXRCE-DDS 통신 원리를 직접 구현한 교육용 코드
+#   키보드 드론 제어 노드 (2주차 메인 실습)
+#   PX4 uXRCE-DDS와 직접 통신하여 Offboard 제어 구현
+#
+#   keyboard_control_v2.py에서 ArUco 모드(6주차 내용)를 제거한 버전.
+#   모드 전환(M키)이 포함된 확장판은 6주차 정밀착륙 실습에서 다시 만난다.
 #
 #   키 바인딩:
 #     T     : 시동(Arm) + Offboard 모드 + 이륙
@@ -20,7 +23,7 @@
 #     Ctrl+C: 종료
 #
 # Repository:
-#   https://github.com/gnc-chlee/px4-ros2-ai-drone
+#   https://github.com/gnc-chlee/drone_ros2_advanced
 #
 # License : MIT
 # ==============================================================================
@@ -47,8 +50,6 @@ from px4_msgs.msg import (
     VehicleOdometry,
 )
 
-from std_msgs.msg import String
-
 
 # ================================================================
 # QoS 설정 - PX4 uXRCE-DDS 전용
@@ -66,7 +67,6 @@ PX4_QOS = QoSProfile(
 # ================================================================
 V_STEP      = 0.5               # 속도 증가 단계 [m/s]
 YAW_STEP    = math.radians(15)  # Yaw 증가 단계 [rad/s]
-TAKEOFF_ALT = 3.0               # 이륙 고도 [m]
 TIMER_HZ    = 20                # 제어 루프 주파수 [Hz]
 
 MSG = """
@@ -88,17 +88,14 @@ MSG = """
 [Heading 제어]
     Q (좌회전) / E (우회전)
 
-[ 모드 전환]
-    M     :  모드 전환
-
 종료: Ctrl+C
 ------------------------------------------------------------
 """
 
 
-class KeyboardControlRaw(Node):
+class KeyboardControl(Node):
     def __init__(self):
-        super().__init__('keyboard_control_raw')
+        super().__init__('keyboard_control')
 
         # ================================================================
         # Publishers - PX4로 보내는 토픽
@@ -118,14 +115,6 @@ class KeyboardControlRaw(Node):
             '/fmu/in/vehicle_command',
             PX4_QOS
         )
-
-        self.mode_pub = self.create_publisher(
-            String,
-            '/sjcu/mode',
-            10
-        )
-
-        self.current_mode = "MANUAL"  # 초기 모드 설정
 
         # ================================================================
         # Subscribers - PX4에서 받는 토픽
@@ -156,7 +145,7 @@ class KeyboardControlRaw(Node):
         # ================================================================
         self.create_timer(1.0 / TIMER_HZ, self._control_loop)
 
-        self.get_logger().info('KeyboardControlRaw 초기화 완료')
+        self.get_logger().info('KeyboardControl 초기화 완료')
 
     # ================================================================
     # Subscriber 콜백
@@ -178,29 +167,15 @@ class KeyboardControlRaw(Node):
     # ================================================================
     def _control_loop(self):
         """
-        20Hz로 실행
+        20Hz 제어 루프
         1. Offboard heartbeat 발행 (필수 - 끊기면 Offboard 해제)
         2. TrajectorySetpoint 발행
         """
         timestamp = int(self.get_clock().now().nanoseconds / 1000)
 
-        ##############################################################
-        # Aruco 모드에서는 키보드 제어 비활성화 → velocity 제어만 허용
-        if self.current_mode == 'ARUCO':
-            # Aruco 모드에서는 키보드 제어 비활성화
-            offboard_msg = OffboardControlMode()
-            offboard_msg.position = False
-            offboard_msg.velocity = True
-            offboard_msg.acceleration = False
-            offboard_msg.attitude = False
-            offboard_msg.timestamp = timestamp
-            self.offboard_mode_pub.publish(offboard_msg)
-            self.offboard_counter += 1
-            return
-        ############################################################
         # ── 1. Offboard heartbeat ────────────────────────────────
         # PX4는 이 메시지를 10Hz 이상으로 받아야 Offboard 유지
-        offboard_msg = OffboardControlMode()
+        offboard_msg              = OffboardControlMode()
         offboard_msg.acceleration = False
         offboard_msg.attitude     = False
         offboard_msg.timestamp    = timestamp
@@ -268,17 +243,12 @@ class KeyboardControlRaw(Node):
         self.vehicle_command_pub.publish(msg)
 
     # ================================================================
-    # 기본 명령 함수
+    # 기본 명령
     # ================================================================
     def arm(self):
         self._publish_vehicle_command(
             VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0)
         self.get_logger().info('Arm 명령 전송')
-
-    def disarm(self):
-        self._publish_vehicle_command(
-            VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=0.0)
-        self.get_logger().info('Disarm 명령 전송')
 
     def set_offboard_mode(self):
         self._publish_vehicle_command(
@@ -289,45 +259,30 @@ class KeyboardControlRaw(Node):
         self._publish_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
         self.get_logger().info('착륙 명령 전송')
 
-    def takeoff_position(self, altitude: float):
-        """
-        Offboard 모드에서 position setpoint로 이륙
-        VEHICLE_CMD_NAV_TAKEOFF은 Auto 모드 전용이라 사용 불가
-        position setpoint로 목표 고도 지정
-        """
-        setpoint           = TrajectorySetpoint()
-        setpoint.timestamp = int(self.get_clock().now().nanoseconds / 1000)
-        setpoint.position  = [float('nan'), float('nan'), -altitude]  # NED: 음수가 위
-        setpoint.velocity  = [float('nan'), float('nan'), float('nan')]
-        setpoint.yaw       = float('nan')
-        self.trajectory_pub.publish(setpoint)
-        self.get_logger().info(f'이륙 setpoint 전송: {altitude}m')
-
     # ================================================================
-    # T키 처리 - 순차 실행 (별도 스레드)
+    # T키 - 이륙 시퀀스 (별도 스레드)
     # ================================================================
     def _arm_and_takeoff(self):
         """
-        Offboard → Arm → 이륙 순차 실행
-        각 명령 사이 딜레이 필수 (PX4 처리 시간)
-        별도 스레드에서 실행해야 제어 루프 블로킹 안 됨
+        Arm → Offboard → 이륙 순차 실행
+        heartbeat를 충분히 쌓은 뒤 시작해야 Offboard 진입이 된다.
+        별도 스레드에서 실행해야 제어 루프가 블로킹되지 않는다.
         """
         self.get_logger().info('=== 이륙 시퀀스 시작 ===')
 
-        # 1. Arm
+        # heartbeat 충분히 쌓을 때까지 대기
+        while self.offboard_counter < 10:
+            time.sleep(0.1)
+
         self.arm()
         time.sleep(1.0)
-
-        # 2. 이륙 (position setpoint)
-        self.is_hovering = False
-        self.vz = -0.5  # 상승 속도로 먼저 올라가기
-        time.sleep(0.5)
-
-        # 3. Offboard 모드 전환
         self.set_offboard_mode()
         time.sleep(0.5)
 
-        self.get_logger().info(f'이륙 중... 목표 고도: {TAKEOFF_ALT}m')
+        # 상승 시작 (원하는 고도에서 Space를 눌러 호버링)
+        self.is_hovering = False
+        self.vz = -1.0
+        self.get_logger().info('이륙 중... 원하는 고도에서 Space를 누르세요')
 
     # ================================================================
     # 키 입력 처리
@@ -335,56 +290,37 @@ class KeyboardControlRaw(Node):
     def process_key(self, key: str):
         """키 입력 → 속도/모드 업데이트"""
 
-        # 이동 제어
-        if   key == 'w': self.vx += V_STEP;        self.is_hovering = False
-        elif key == 's': self.vx -= V_STEP;        self.is_hovering = False
-        elif key == 'a': self.vy -= V_STEP;        self.is_hovering = False
-        elif key == 'd': self.vy += V_STEP;        self.is_hovering = False
-
-        # Yaw 제어
+        # ── 이동 제어 ────────────────────────────────────────────
+        if   key == 'w': self.vx += V_STEP;         self.is_hovering = False
+        elif key == 's': self.vx -= V_STEP;         self.is_hovering = False
+        elif key == 'a': self.vy -= V_STEP;         self.is_hovering = False
+        elif key == 'd': self.vy += V_STEP;         self.is_hovering = False
         elif key == 'q': self.yaw_rate -= YAW_STEP; self.is_hovering = False
         elif key == 'e': self.yaw_rate += YAW_STEP; self.is_hovering = False
+        elif key == '\x1b[A': self.vz -= V_STEP;    self.is_hovering = False  # ↑ 상승
+        elif key == '\x1b[B': self.vz += V_STEP;    self.is_hovering = False  # ↓ 하강
 
-        # 고도 제어 (NED: 위가 음수)
-        elif key == '\x1b[A': self.vz -= V_STEP; self.is_hovering = False  # ↑ 상승
-        elif key == '\x1b[B': self.vz += V_STEP; self.is_hovering = False  # ↓ 하강
-
-        # 호버링 (Space)
-        elif key == ' ':
+        # ── Space: 호버링 ────────────────────────────────────────
+        if key == ' ':
             self.vx, self.vy, self.vz = 0.0, 0.0, 0.0
-            self.yaw_rate = 0.0
-            self.target_z = self.current_z
+            self.yaw_rate    = 0.0
+            self.target_z    = self.current_z
             self.is_hovering = True
-            self.get_logger().info(f'호버링: 고도 유지 ({self.target_z:.2f} m)')
+            self.get_logger().info(f'호버링: 고도 유지 ({self.target_z:.2f}m)')
 
-        # 이륙 (T) - 별도 스레드로 순차 실행
+        # ── T: 이륙 (별도 스레드로 순차 실행) ────────────────────
         elif key == 't':
             threading.Thread(
                 target=self._arm_and_takeoff, daemon=True
             ).start()
 
-        # 착륙 (L)
+        # ── L: 착륙 ──────────────────────────────────────────────
         elif key == 'l':
             self.vx, self.vy, self.vz = 0.0, 0.0, 0.0
-            self.yaw_rate = 0.0
+            self.yaw_rate    = 0.0
             self.is_hovering = False
             self.land()
 
-        elif key == 'm':
-            if self.current_mode == "MANUAL":
-                self.current_mode = 'ARUCO'
-                mode_msg = String()
-                mode_msg.data = 'ARUCO'
-                self.mode_pub.publish(mode_msg)
-                self.get_logger().info('=== Aruco 모드 전환 ===')
-                print('\n[Aruco 모드] Marker detection 활성화\n')
-            else:
-                self.current_mode = 'MANUAL'
-                mode_msg = String()
-                mode_msg.data = 'MANUAL'
-                self.mode_pub.publish(mode_msg)
-                self.get_logger().info('=== Manual 모드 전환 ===')
-                print('\n[Manual 모드] 키보드 제어 활성화\n')
 
 # ================================================================
 # 키 입력 헬퍼
@@ -404,7 +340,7 @@ def get_key(settings):
 # ================================================================
 def main(args=None):
     rclpy.init(args=args)
-    node = KeyboardControlRaw()
+    node = KeyboardControl()
     settings = termios.tcgetattr(sys.stdin)
 
     print(MSG)
@@ -425,20 +361,20 @@ def main(args=None):
 
             node.process_key(key)
 
-            # 현재 속도 상태 출력
-            if not node.is_hovering:
+            # 현재 상태 출력
+            if node.is_hovering:
                 print(
-                    f"\r속도 — "
+                    f"\r[호버링] 고도: {abs(node.target_z):.1f}m  ",
+                    end=""
+                )
+            else:
+                print(
+                    f"\r[수동] "
                     f"VX:{node.vx:+.1f}  "
                     f"VY:{node.vy:+.1f}  "
                     f"VZ:{node.vz:+.1f}  "
                     f"Yaw:{math.degrees(node.yaw_rate):+.1f}°/s  "
                     f"고도:{abs(node.current_z):.1f}m  ",
-                    end=""
-                )
-            else:
-                print(
-                    f"\r[호버링] 고도: {abs(node.target_z):.1f}m  ",
                     end=""
                 )
 
