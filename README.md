@@ -90,29 +90,7 @@ drone_ros2_advanced/
 ```
 ※ week04(Gazebo World), week10~12(LiDAR·회피·상태머신)는 교안 제작 진도에 맞춰 추가됩니다.
 
-## VM에서 Gazebo가 느리거나 화면이 이상할 때
-
-**1순위 — VMware 3D 가속 켜기** (호스트 GPU 활용, 그래픽이 훨씬 부드러워짐):
-
-1. VM 종료 → **VM Settings → Hardware → Display → "Accelerate 3D graphics" 체크**, Graphics memory는 크게 (권장 8GB)
-2. `~/.bashrc`에 `LIBGL_ALWAYS_SOFTWARE=1`을 넣어둔 적이 있다면 **제거** (이게 있으면 가속이 무시됨)
-3. 부팅 후 확인:
-   ```bash
-   sudo apt install -y mesa-utils
-   glxinfo -B | grep renderer
-   ```
-   - `SVGA3D` 가 보이면 → GPU 가속 성공
-   - `llvmpipe` 가 보이면 → 여전히 CPU 렌더링
-4. VM 할당도 함께 점검: vCPU 4개 이상, 메모리 8GB 이상 권장
-
-**2순위 — 3D 가속을 켰더니 Gazebo가 검게 나오거나 크래시하면** (소프트웨어 렌더링 폴백):
-
-```bash
-export LIBGL_ALWAYS_SOFTWARE=1
-```
-
-느리지만 안정적으로 동작합니다. 3D 가속 체크는 해제해도 되고 둬도 됩니다.
-
 ## 참고
-- 비전 실습(5주차~)은 카메라 렌더링 부담이 커서, 3D 가속이 안 되는 환경이면 GPU가 있는 네이티브 Ubuntu 권장
+- 트러블슈팅: Gazebo 화면이 검게 나오면 `export LIBGL_ALWAYS_SOFTWARE=1` (VM 환경)
+- 비전 실습(5주차~)은 카메라 렌더링이 필요하므로 GPU가 있는 네이티브 Ubuntu 권장
 - YOLOv8n은 CPU 환경에서도 동작 가능 (저사양 PC 대응)
