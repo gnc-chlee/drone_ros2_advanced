@@ -20,7 +20,7 @@
 #
 #   배우는 개념:
 #     - VehicleLocalPosition 구독 → 드론의 실제 위치 알기
-#     - 도달 판정: 피타고라스 정리로 거리 계산 (math.sqrt)
+#     - 도달 판정: 수평거리(x·y) 피타고라스 정리로 거리 계산 (math.sqrt)
 #     - 상태 머신 (IDLE → TAKEOFF → MISSION → LAND → DONE)
 #
 #   실행 방법:
@@ -154,9 +154,10 @@ class WaypointMissionRaw(Node):
             self._publish_position(0.0, 0.0, -self.takeoff_alt)
 
             if self.heartbeat_count >= 20:   # 1초 (20Hz × 20)
-                self.get_logger().info('Heartbeat 충분 → Arm + Offboard 전환')
-                self._arm()
+                self.get_logger().info('Heartbeat 충분 → Offboard 전환 + Arm')
+                # 참고: 명령 성공 여부(ack) 확인은 생략한 교육용 단순화 (정식은 VehicleCommandAck 확인)
                 self._set_offboard_mode()
+                self._arm()
                 self.state = MissionState.TAKEOFF
 
         # ─── TAKEOFF: 목표 고도까지 상승 ────────────────────────
@@ -189,7 +190,7 @@ class WaypointMissionRaw(Node):
 
             self._publish_position(wp_x, wp_y, wp_z)
 
-            # ── 도달 판정: 피타고라스 정리! ← 이번 강 핵심 ──────
+            # ── 도달 판정: 수평거리(x·y) 피타고라스 정리! ← 이번 강 핵심 ──────
             dx = self.pos_x - wp_x
             dy = self.pos_y - wp_y
             distance = math.sqrt(dx**2 + dy**2)
@@ -215,6 +216,7 @@ class WaypointMissionRaw(Node):
 
         # ─── DONE: 미션 완료 ────────────────────────────────────
         elif self.state == MissionState.DONE:
+            # 단순 판정(고도 기준) — 정식 방법은 /fmu/out/vehicle_land_detected 구독 (base판 참조)
             if abs(self.pos_z) < 0.3:
                 self.get_logger().info(
                     '===== 미션 완료! =====',

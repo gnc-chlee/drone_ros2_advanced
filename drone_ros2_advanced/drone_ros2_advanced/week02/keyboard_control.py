@@ -174,7 +174,7 @@ class KeyboardControl(Node):
         timestamp = int(self.get_clock().now().nanoseconds / 1000)
 
         # ── 1. Offboard heartbeat ────────────────────────────────
-        # PX4는 이 메시지를 10Hz 이상으로 받아야 Offboard 유지
+        # 공식 최소 2Hz 초과 — 실습은 20Hz로 여유 있게
         offboard_msg              = OffboardControlMode()
         offboard_msg.acceleration = False
         offboard_msg.attitude     = False

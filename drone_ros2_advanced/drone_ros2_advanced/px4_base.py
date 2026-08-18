@@ -38,6 +38,7 @@ from px4_msgs.msg import (
     VehicleCommand,
     VehicleStatus,
     VehicleAttitude,
+    VehicleLandDetected,
 )
 
 
@@ -95,14 +96,23 @@ class PX4Base(Node):
             PX4_QOS
         )
 
+        # VehicleLandDetected - PX4 착륙 감지 (is_landed에 필수)
+        self.land_detected_sub = self.create_subscription(
+            VehicleLandDetected,
+            '/fmu/out/vehicle_land_detected',
+            self._land_detected_callback,
+            PX4_QOS
+        )
+
         # ================================================================
         # [FIXED] 상태 변수 (수정 금지)
         # ================================================================
         self.vehicle_status = VehicleStatus()
         self.current_yaw    = 0.0   # [rad] VehicleAttitude에서 자동 업데이트
+        self.land_detected  = VehicleLandDetected()
 
         # ================================================================
-        # [FIXED] Offboard heartbeat 타이머 (10Hz 필수, 수정 금지)
+        # [FIXED] Offboard heartbeat 타이머 (10Hz — 공식 최소 2Hz 초과에 여유, 수정 금지)
         # ================================================================
         self.offboard_counter = 0
         self.heartbeat_timer  = self.create_timer(
@@ -128,11 +138,16 @@ class PX4Base(Node):
         cosy_cosp        = 1.0 - 2.0 * (q[2] ** 2 + q[3] ** 2)
         self.current_yaw = np.arctan2(siny_cosp, cosy_cosp)
 
+    def _land_detected_callback(self, msg: VehicleLandDetected):
+        """PX4 착륙 감지 상태 업데이트 (is_landed용)"""
+        self.land_detected = msg
+
     def _offboard_heartbeat(self):
         """
         Offboard 모드 유지를 위한 heartbeat
-        PX4는 10Hz 이상으로 이 메시지를 받아야 Offboard 유지
-        position=True, velocity=True → 두 모드 모두 허용
+        공식 최소 2Hz 초과 — 여유 있게 10Hz로 발행
+        플래그는 첫 True가 우선(position 우선). velocity 제어 노드는
+        position을 NaN으로 보내거나 heartbeat를 재정의(drone_controller 참조)
         """
         msg = OffboardControlMode()
         msg.position     = True
@@ -191,11 +206,8 @@ class PX4Base(Node):
 
     @property
     def is_landed(self) -> bool:
-        """착륙 상태인지 확인"""
-        return (
-            self.vehicle_status.landed_state
-            == VehicleStatus.LANDED_STATE_ON_GROUND
-        )
+        """착륙 상태인지 확인 — PX4 착륙 감지(VehicleLandDetected) 기준"""
+        return bool(self.land_detected.landed)
 
     # ================================================================
     # [FIXED] 기본 명령 함수 (수정 금지)

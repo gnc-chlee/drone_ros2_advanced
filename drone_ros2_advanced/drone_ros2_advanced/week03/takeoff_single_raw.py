@@ -17,11 +17,11 @@
 #
 #   배우는 개념:
 #     - PX4 Offboard 제어에 필요한 3가지 토픽
-#       /fmu/in/offboard_control_mode : "나 offboard로 조종할게" (10Hz 필수)
+#       /fmu/in/offboard_control_mode : "나 offboard로 조종할게" (지속 발행 — 공식 최소 2Hz 초과, 실습은 20Hz)
 #       /fmu/in/trajectory_setpoint   : "여기로 가/이 속도로 가"
 #       /fmu/in/vehicle_command       : Arm, 모드 전환, 착륙 등 명령
 #     - NED 좌표계: x=북(+), y=동(+), z=아래(+) → 위로 5m = z -5.0
-#     - PX4 전용 QoS 설정 (이게 다르면 토픽이 안 붙어요)
+#     - PX4 QoS 설정 (필수인 곳은 /fmu/out 구독 — 발행은 기본 QoS도 호환)
 #
 #   실행 방법:
 #     터미널 1: cd ~/PX4-Autopilot && make px4_sitl gz_x500
@@ -49,8 +49,8 @@ from px4_msgs.msg import (
 
 # ================================================================
 # [복붙 영역] QoS 설정 — PX4 uXRCE-DDS 전용
-# 원리: PX4는 BEST_EFFORT + TRANSIENT_LOCAL QoS만 받아줍니다.
-#       ROS2 기본 QoS로 publish하면 PX4가 무시해요!
+# 원리: 전용 QoS가 꼭 필요한 쪽은 /fmu/out 구독(기본 QoS면 데이터가 안 와요).
+#       발행은 기본 QoS도 호환되지만, 헷갈리지 않게 구독·발행 모두 이 설정으로 통일합니다.
 # ================================================================
 PX4_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -101,10 +101,10 @@ class TakeoffSingleRaw(Node):
         self.tick += 1
         elapsed = self.tick / TIMER_HZ   # 시작 후 지난 시간 [초]
 
-        # ── 1. heartbeat 발행 (항상! 10Hz 이상 끊기면 Offboard 해제) ──
+        # ── 1. heartbeat 발행 (항상! 신호가 끊기면 COM_OF_LOSS_T 후 failsafe) ──
         self._publish_heartbeat()
 
-        # ── 2. setpoint 발행 (heartbeat와 함께 항상 발행해야 함) ──
+        # ── 2. setpoint 발행 (실습은 매 주기 발행 — ROS2에서 유지 필수 신호는 heartbeat 쪽) ──
         if elapsed < MOVE_AFTER:
             # 이륙 지점 위 5m
             self._publish_position(0.0, 0.0, -TAKEOFF_ALT)
@@ -127,7 +127,7 @@ class TakeoffSingleRaw(Node):
     # [복붙 영역] 퍼블리시 헬퍼 — 원리만 이해하면 OK
     # ============================================================
     def _publish_heartbeat(self):
-        """'position으로 제어하겠다'는 신호. 10Hz 이상 필수"""
+        """'position으로 제어하겠다'는 신호. 공식 최소 2Hz 초과, 실습은 20Hz"""
         msg = OffboardControlMode()
         msg.position     = True
         msg.velocity     = False

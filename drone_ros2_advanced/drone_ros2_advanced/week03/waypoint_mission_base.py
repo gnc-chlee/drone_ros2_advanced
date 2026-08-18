@@ -94,8 +94,9 @@ class WaypointMissionBase(PX4Base):
         if self.state == MissionState.IDLE:
             self.send_position(0.0, 0.0, -self.takeoff_alt)
             if self.offboard_counter >= 10:   # heartbeat 1초 확보
-                self.arm()
+                # 참고: 명령 성공 여부(ack) 확인은 생략한 교육용 단순화 (정식은 VehicleCommandAck 확인)
                 self.set_offboard_mode()
+                self.arm()
                 self.state = MissionState.TAKEOFF
 
         # ─── TAKEOFF ────────────────────────────────────────────
@@ -119,6 +120,7 @@ class WaypointMissionBase(PX4Base):
             wp_x, wp_y = self.waypoints[self.current_wp_idx]
             self.send_position(wp_x, wp_y, -self.takeoff_alt)
 
+            # 도달 판정: 수평거리(x·y) 피타고라스
             distance = math.sqrt(
                 (pos.x - wp_x)**2 + (pos.y - wp_y)**2)
 
@@ -139,7 +141,8 @@ class WaypointMissionBase(PX4Base):
 
         # ─── DONE ───────────────────────────────────────────────
         elif self.state == MissionState.DONE:
-            if abs(pos.z) < 0.3:
+            # PX4 착륙 감지(VehicleLandDetected) 사용 — PX4Base.is_landed
+            if self.is_landed:
                 self.get_logger().info(
                     '===== 미션 완료! =====',
                     throttle_duration_sec=5.0
