@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : waypoint_yaml_raw.py  (3주차 - raw 버전)
+# File    : waypoint_yaml_raw.py  (3주차 2강 - raw 버전)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-07-07
 # Version : 1.0.0
 #
 # Description:
 #   다중 Waypoint 비행 - waypoint를 코드가 아닌 "YAML 파일"로 관리
-#   2주차와 비행 로직은 같고, 목표 위치를 파일에서 읽어옵니다.
+#   multi_position과 비행 로직은 같고, 목표 위치를 파일에서 읽어옵니다.
 #
 #   배우는 개념:
 #     - 설정과 코드의 분리: 미션 바꿀 때 코드 수정 없이 yaml만 수정
@@ -63,7 +63,7 @@ class WaypointYamlRaw(Node):
         super().__init__('waypoint_yaml_raw')
 
         # ============================================================
-        # YAML 파일에서 미션 읽기  ← 이번 주 학습 포인트!
+        # YAML 파일에서 미션 읽기  ← 이번 강 학습 포인트!
         # ============================================================
         default_yaml = os.path.join(
             get_package_share_directory('drone_ros2_advanced'),
@@ -96,7 +96,7 @@ class WaypointYamlRaw(Node):
         self.create_timer(1.0 / TIMER_HZ, self._control_loop)
 
         self.get_logger().info(
-            f'3주차 시작! YAML: {yaml_path}\n'
+            f'YAML 미션 시작! YAML: {yaml_path}\n'
             f'  이륙 고도: {self.takeoff_alt}m, '
             f'Waypoint {len(self.waypoints)}개, 각 {self.hold_sec}초'
         )
@@ -104,7 +104,7 @@ class WaypointYamlRaw(Node):
             self.get_logger().info(f'  WP{i+1}: ({x}, {y})')
 
     # ============================================================
-    # 제어 루프 (20Hz) — 2주차와 동일한 시간 기반 전환
+    # 제어 루프 (20Hz) — multi_position과 동일한 시간 기반 전환
     # ============================================================
     def _control_loop(self):
         self.tick += 1
@@ -133,7 +133,7 @@ class WaypointYamlRaw(Node):
         self._publish_position(x, y, -self.takeoff_alt)
 
     # ============================================================
-    # [복붙 영역] 퍼블리시 헬퍼 (1~2주차와 동일)
+    # [복붙 영역] 퍼블리시 헬퍼 (takeoff_single_raw와 동일)
     # ============================================================
     def _publish_heartbeat(self):
         msg = OffboardControlMode()

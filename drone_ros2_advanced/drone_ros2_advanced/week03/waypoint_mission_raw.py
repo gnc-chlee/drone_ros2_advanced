@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : waypoint_mission_raw.py  (4주차 - raw 버전)
+# File    : waypoint_mission_raw.py  (3주차 2강 - raw 버전)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-07-07
 # Version : 1.0.0
@@ -8,7 +8,7 @@
 # Description:
 #   Waypoint 자동 비행 미션 - 도착 판정 + 자동 착륙 완성판
 #
-#   3주차의 "시간 기반 전환" 문제를 해결합니다:
+#   waypoint_yaml의 "시간 기반 전환" 문제를 해결합니다:
 #     시간 기반 → 도착 안 했는데 다음으로 넘어감 / 도착했는데 기다림
 #     도착 판정 → 실제 위치를 구독해서 "가까워지면" 다음으로!
 #
@@ -26,7 +26,7 @@
 #   실행 방법:
 #     터미널 1: cd ~/PX4-Autopilot && make px4_sitl gz_x500
 #     터미널 2: MicroXRCEAgent udp4 -p 8888
-#     터미널 3: ros2 run drone_ros2_advanced w04_mission_raw
+#     터미널 3: ros2 run drone_ros2_advanced w03_mission_raw
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced
@@ -80,7 +80,7 @@ class WaypointMissionRaw(Node):
     def __init__(self):
         super().__init__('waypoint_mission_raw')
 
-        # ── YAML에서 미션 읽기 (3주차 복습) ──────────────────────
+        # ── YAML에서 미션 읽기 (waypoint_yaml 복습) ──────────────
         default_yaml = os.path.join(
             get_package_share_directory('drone_ros2_advanced'),
             'config', 'waypoints.yaml'
@@ -104,7 +104,7 @@ class WaypointMissionRaw(Node):
         self.command_pub = self.create_publisher(
             VehicleCommand, '/fmu/in/vehicle_command', PX4_QOS)
 
-        # ── Subscriber: 실제 위치  ← 이번 주 학습 포인트! ────────
+        # ── Subscriber: 실제 위치  ← 이번 강 학습 포인트! ────────
         self.local_pos_sub = self.create_subscription(
             VehicleLocalPosition,
             '/fmu/out/vehicle_local_position',
@@ -125,7 +125,7 @@ class WaypointMissionRaw(Node):
         self.create_timer(1.0 / TIMER_HZ, self._control_loop)
 
         self.get_logger().info(
-            f'===== 4주차 Waypoint Mission 시작 =====\n'
+            f'===== Waypoint Mission 시작 =====\n'
             f'  이륙 고도  : {self.takeoff_alt}m\n'
             f'  Waypoints : {len(self.waypoints)}개\n'
             f'  도달 반경  : {self.tolerance}m'
@@ -189,7 +189,7 @@ class WaypointMissionRaw(Node):
 
             self._publish_position(wp_x, wp_y, wp_z)
 
-            # ── 도달 판정: 피타고라스 정리! ← 이번 주 핵심 ──────
+            # ── 도달 판정: 피타고라스 정리! ← 이번 강 핵심 ──────
             dx = self.pos_x - wp_x
             dy = self.pos_y - wp_y
             distance = math.sqrt(dx**2 + dy**2)

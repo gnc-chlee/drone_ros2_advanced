@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : multi_position_raw.py  (2주차 - raw 버전)
+# File    : multi_position_raw.py  (3주차 2강 - raw 버전)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-07-07
 # Version : 1.0.0
 #
 # Description:
-#   다중 position 이동 - 1주차 코드를 "리스트 + 반복"으로 확장
+#   다중 position 이동 - takeoff_single 코드를 "리스트 + 반복"으로 확장
 #
 #   동작 흐름:
 #     1. Arm + Offboard 전환 후 이륙
@@ -16,13 +16,13 @@
 #   배우는 개념:
 #     - 파이썬 리스트로 여러 목표점 관리
 #     - 인덱스(current_idx)로 "지금 몇 번째 목표인지" 추적
-#     - 시간 기반 전환의 한계 → 4주차에서 "도착 판정"으로 개선!
+#     - 시간 기반 전환의 한계 → waypoint_mission에서 "도착 판정"으로 개선!
 #       (드론이 도착 안 했어도 시간 되면 다음으로 넘어가버림)
 #
 #   실행 방법:
 #     터미널 1: cd ~/PX4-Autopilot && make px4_sitl gz_x500
 #     터미널 2: MicroXRCEAgent udp4 -p 8888
-#     터미널 3: ros2 run drone_ros2_advanced w02_multi_raw
+#     터미널 3: ros2 run drone_ros2_advanced w03_multi_raw
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced
@@ -91,7 +91,7 @@ class MultiPositionRaw(Node):
         self.create_timer(1.0 / TIMER_HZ, self._control_loop)
 
         self.get_logger().info(
-            f'2주차 시작! 위치 {len(POSITIONS)}개, '
+            f'다중 position 시작! 위치 {len(POSITIONS)}개, '
             f'각 {HOLD_SEC}초씩 (시간 기반 전환)'
         )
 
@@ -129,7 +129,7 @@ class MultiPositionRaw(Node):
         self._publish_position(x, y, -TAKEOFF_ALT)
 
     # ============================================================
-    # [복붙 영역] 퍼블리시 헬퍼 (1주차와 동일)
+    # [복붙 영역] 퍼블리시 헬퍼 (takeoff_single_raw와 동일)
     # ============================================================
     def _publish_heartbeat(self):
         msg = OffboardControlMode()

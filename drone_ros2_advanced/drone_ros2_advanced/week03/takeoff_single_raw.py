@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : takeoff_single_raw.py  (1주차 - raw 버전)
+# File    : takeoff_single_raw.py  (3주차 1강 - raw 버전)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-07-07
 # Version : 1.0.0
@@ -26,7 +26,7 @@
 #   실행 방법:
 #     터미널 1: cd ~/PX4-Autopilot && make px4_sitl gz_x500
 #     터미널 2: MicroXRCEAgent udp4 -p 8888
-#     터미널 3: ros2 run drone_ros2_advanced w01_takeoff_raw
+#     터미널 3: ros2 run drone_ros2_advanced w03_takeoff_raw
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced
@@ -90,7 +90,7 @@ class TakeoffSingleRaw(Node):
         self.create_timer(1.0 / TIMER_HZ, self._control_loop)
 
         self.get_logger().info(
-            f'1주차 시작! 이륙 {TAKEOFF_ALT}m → {MOVE_AFTER}초 후 '
+            f'이륙 미션 시작! 이륙 {TAKEOFF_ALT}m → {MOVE_AFTER}초 후 '
             f'({TARGET_X}, {TARGET_Y})로 이동'
         )
 

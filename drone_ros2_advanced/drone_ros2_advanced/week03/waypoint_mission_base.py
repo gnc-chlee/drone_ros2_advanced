@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : waypoint_mission_base.py  (4주차 - px4_base 버전)
+# File    : waypoint_mission_base.py  (3주차 2강 - px4_base 버전)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-07-07
 # Version : 1.0.0
@@ -13,7 +13,7 @@
 #   실행 방법:
 #     터미널 1: cd ~/PX4-Autopilot && make px4_sitl gz_x500
 #     터미널 2: MicroXRCEAgent udp4 -p 8888
-#     터미널 3: ros2 run drone_ros2_advanced w04_mission_base
+#     터미널 3: ros2 run drone_ros2_advanced w03_mission_base
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced
@@ -43,7 +43,7 @@ class WaypointMissionBase(PX4Base):
     def __init__(self):
         super().__init__('waypoint_mission_base')
 
-        # ── YAML에서 미션 읽기 (3주차 복습) ──────────────────────
+        # ── YAML에서 미션 읽기 (waypoint_yaml 복습) ──────────────
         default_yaml = os.path.join(
             get_package_share_directory('drone_ros2_advanced'),
             'config', 'waypoints.yaml'
@@ -77,7 +77,7 @@ class WaypointMissionBase(PX4Base):
         self.create_timer(0.1, self.on_update)   # 10Hz
 
         self.get_logger().info(
-            f'4주차(base) 시작! Waypoint {len(self.waypoints)}개, '
+            f'Waypoint Mission(base) 시작! Waypoint {len(self.waypoints)}개, '
             f'도달 반경 {self.tolerance}m'
         )
 

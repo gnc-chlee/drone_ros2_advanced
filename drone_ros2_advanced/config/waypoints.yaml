@@ -1,9 +1,9 @@
 # ==============================================================================
-# Waypoint 미션 설정 파일 (3주차~)
+# Waypoint 미션 설정 파일 (3주차 2강)
 #
 # - takeoff_altitude : 이륙 고도 [m] (양수로 입력, 코드에서 NED 변환)
-# - hold_sec         : 각 waypoint에서 머무는 시간 [s] (3주차 시간 기반에서 사용)
-# - tolerance        : waypoint 도달 판정 반경 [m] (4주차부터 사용)
+# - hold_sec         : 각 waypoint에서 머무는 시간 [s] (waypoint_yaml 시간 기반에서 사용)
+# - tolerance        : waypoint 도달 판정 반경 [m] (waypoint_mission부터 사용)
 # - waypoints        : [x, y] 목록 (NED 좌표, 단위 m)
 #                      x: 북쪽(+) / 남쪽(-), y: 동쪽(+) / 서쪽(-)
 #

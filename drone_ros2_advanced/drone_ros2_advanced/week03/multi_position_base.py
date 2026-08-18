@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : multi_position_base.py  (2주차 - px4_base 버전)
+# File    : multi_position_base.py  (3주차 2강 - px4_base 버전)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-07-07
 # Version : 1.0.0
@@ -13,7 +13,7 @@
 #   실행 방법:
 #     터미널 1: cd ~/PX4-Autopilot && make px4_sitl gz_x500
 #     터미널 2: MicroXRCEAgent udp4 -p 8888
-#     터미널 3: ros2 run drone_ros2_advanced w02_multi_base
+#     터미널 3: ros2 run drone_ros2_advanced w03_multi_base
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced
@@ -49,7 +49,7 @@ class MultiPositionBase(PX4Base):
         self.create_timer(0.1, self.on_update)   # 10Hz
 
         self.get_logger().info(
-            f'2주차(base) 시작! 위치 {len(POSITIONS)}개, 각 {HOLD_SEC}초씩'
+            f'다중 position(base) 시작! 위치 {len(POSITIONS)}개, 각 {HOLD_SEC}초씩'
         )
 
     def on_update(self):

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : waypoint_yaml_base.py  (3주차 - px4_base 버전)
+# File    : waypoint_yaml_base.py  (3주차 2강 - px4_base 버전)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-07-07
 # Version : 1.0.0
@@ -35,7 +35,7 @@ class WaypointYamlBase(PX4Base):
         super().__init__('waypoint_yaml_base')
 
         # ============================================================
-        # YAML 파일에서 미션 읽기  ← 이번 주 학습 포인트!
+        # YAML 파일에서 미션 읽기  ← 이번 강 학습 포인트!
         # ============================================================
         default_yaml = os.path.join(
             get_package_share_directory('drone_ros2_advanced'),
@@ -57,7 +57,7 @@ class WaypointYamlBase(PX4Base):
         self.create_timer(0.1, self.on_update)   # 10Hz
 
         self.get_logger().info(
-            f'3주차(base) 시작! Waypoint {len(self.waypoints)}개 '
+            f'YAML 미션(base) 시작! Waypoint {len(self.waypoints)}개 '
             f'({yaml_path})'
         )
 
