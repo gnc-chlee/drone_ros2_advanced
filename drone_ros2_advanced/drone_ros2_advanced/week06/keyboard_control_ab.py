@@ -1,14 +1,25 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : keyboard_control_ab.py
-# Author  : Choonghyeon Lee (gnc-chlee)
+# File    : keyboard_control_ab.py  (6주차 2강)
+# Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-06-08
 # Version : 1.0.0
 #
 # Description:
 #   키보드 드론 제어 노드 (Arbitrator 버전)
 #   직접 PX4로 setpoint 보내지 않고
-#   /sjcu/cmd, /sjcu/mode 토픽으로 Arbitrator에 전달
+#   /sjcu/cmd, /sjcu/mode 토픽으로 Arbitrator(precision_land_ab)에 전달
+#   (Offboard heartbeat 와 arm/offboard/land 명령은 이 노드가 직접 PX4로 보냄)
+#
+#   동작 조합: w05_aruco + w06_keyboard_ab + w06_precision_land
+#
+#   실행 방법 (터미널 6개, 순서대로):
+#     터미널 1: cd ~/PX4-Autopilot && PX4_GZ_WORLD=aruco make px4_sitl gz_x500_mono_cam_down
+#     터미널 2: MicroXRCEAgent udp4 -p 8888
+#     터미널 3: ros2 run drone_ros2_advanced w05_camera_bridge     # Gazebo 이미지 → /camera/image_raw
+#     터미널 4: ros2 run drone_ros2_advanced w05_aruco
+#     터미널 5: ros2 run drone_ros2_advanced w06_keyboard_ab        # ← 이 노드
+#     터미널 6: ros2 run drone_ros2_advanced w06_precision_land
 #
 #   키 바인딩:
 #     T     : 시동(Arm) + Offboard 모드 + 이륙
@@ -22,7 +33,7 @@
 #     Ctrl+C: 종료
 #
 # Repository:
-#   https://github.com/gnc-chlee/px4-ros2-ai-drone
+#   https://github.com/gnc-chlee/drone_ros2_advanced
 #
 # License : MIT
 # ==============================================================================
@@ -64,7 +75,6 @@ PX4_QOS = QoSProfile(
 # ================================================================
 V_STEP      = 0.5
 YAW_STEP    = math.radians(15)
-TAKEOFF_ALT = 3.0
 TIMER_HZ    = 20
 
 MSG = """
@@ -251,7 +261,7 @@ class KeyboardControlAB(Node):
         time.sleep(0.5)
         self.is_hovering = False
         self.vz = -1.0
-        self.get_logger().info(f'이륙 중... 목표: {TAKEOFF_ALT}m')
+        self.get_logger().info('이륙 중... 원하는 고도에서 Space를 누르세요')
 
     # ================================================================
     # 모드 퍼블리시

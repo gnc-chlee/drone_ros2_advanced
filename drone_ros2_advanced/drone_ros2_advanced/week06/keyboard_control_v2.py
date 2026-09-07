@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : keyboard_control.py
-# Author  : Changhyeon Lee (gnc-chlee)
+# File    : keyboard_control_v2.py  (6주차 2강 - 참고용)
+# Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-06-01
 # Version : 2.0.0
 #
 # Description:
+#   ※ 참고용 — 이 저장소의 precision_land_ab와는 /sjcu/mode 값('aruco' vs 'land')이
+#     달라 함께 쓸 수 없음. 6주차 실습은 keyboard_control_ab를 사용.
+#     (aruco_controller 전제 — 이 저장소에 미포함)
+#
 #   키보드 드론 제어 노드 (V2 버전 - px4_base 미사용)
 #   PX4 uXRCE-DDS와 직접 통신하여 Offboard 제어 구현
 #
@@ -24,8 +28,11 @@
 #     ↑/↓   : 상승/하강
 #     Ctrl+C: 종료
 #
+#   실행 (참고):
+#     ros2 run drone_ros2_advanced w06_keyboard_v2
+#
 # Repository:
-#   https://github.com/gnc-chlee/px4-ros2-ai-drone
+#   https://github.com/gnc-chlee/drone_ros2_advanced
 #
 # License : MIT
 # ==============================================================================
@@ -70,7 +77,6 @@ PX4_QOS = QoSProfile(
 # ================================================================
 V_STEP      = 0.5               # 속도 증가 단계 [m/s]
 YAW_STEP    = math.radians(15)  # Yaw 증가 단계 [rad/s]
-TAKEOFF_ALT = 3.0               # 이륙 고도 [m]
 TIMER_HZ    = 20                # 제어 루프 주파수 [Hz]
 
 MSG = """
@@ -281,7 +287,7 @@ class KeyboardControlV2(Node):
         # 상승 시작
         self.is_hovering = False
         self.vz = -1.0
-        self.get_logger().info(f'이륙 중... 목표: {TAKEOFF_ALT}m')
+        self.get_logger().info('이륙 중... 원하는 고도에서 Space를 누르세요')
 
     # ================================================================
     # 모드 퍼블리시 헬퍼

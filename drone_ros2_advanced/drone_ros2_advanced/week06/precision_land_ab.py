@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : precision_land_ab.py
-# Author  : Choonghyeon Lee (gnc-chlee)
+# File    : precision_land_ab.py  (6주차 2강)
+# Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-06-08
 # Version : 1.0.0
 #
@@ -18,24 +18,36 @@
 #   우선순위: LAND > MANUAL
 #
 #   구독 토픽:
-#     /sjcu/cmd                       : [vx,vy,vz,yaw_rate,hover_flag,target_z]
-#     /sjcu/mode                      : "manual" / "land"
-#     /sjcu/error                     : [x_error, y_error, z_error]
+#     /sjcu/cmd                       : [vx,vy,vz,yaw_rate,hover_flag,target_z]  (keyboard_control_ab)
+#     /sjcu/mode                      : "manual" / "land"                          (keyboard_control_ab)
+#     /sjcu/error                     : [x_error, y_error, z_error]  (w05_aruco, 마커 미검출 시 발행 없음)
+#                                        x_error = 마커중심x − 화면중심x [px, 오른쪽 +]
+#                                        y_error = 마커중심y − 화면중심y [px, 아래 +]
+#                                        z_error = 마커 변 길이 평균(px) − target_marker_size
 #     /fmu/out/vehicle_local_position
 #     /fmu/out/vehicle_land_detected  : 착지 감지 → disarm
 #
 #   퍼블리시 토픽:
-#     /fmu/in/offboard_control_mode
+#     /fmu/in/offboard_control_mode   : (현재 미사용 — heartbeat 는 keyboard_control_ab 가 발행)
 #     /fmu/in/trajectory_setpoint
 #     /fmu/in/vehicle_command
 #
+#   동작 조합: w05_aruco + w06_keyboard_ab + w06_precision_land
+#
+#   실행 방법 (터미널 6개, 순서대로):
+#     터미널 1: cd ~/PX4-Autopilot && PX4_GZ_WORLD=aruco make px4_sitl gz_x500_mono_cam_down
+#     터미널 2: MicroXRCEAgent udp4 -p 8888
+#     터미널 3: ros2 run drone_ros2_advanced w05_camera_bridge     # Gazebo 이미지 → /camera/image_raw
+#     터미널 4: ros2 run drone_ros2_advanced w05_aruco
+#     터미널 5: ros2 run drone_ros2_advanced w06_keyboard_ab
+#     터미널 6: ros2 run drone_ros2_advanced w06_precision_land     # ← 이 노드
+#
 # Repository:
-#   https://github.com/gnc-chlee/px4-ros2-ai-drone
+#   https://github.com/gnc-chlee/drone_ros2_advanced
 #
 # License : MIT
 # ==============================================================================
 
-import math
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import (
@@ -80,7 +92,7 @@ DESCEND_VZ   = 0.2     # [m/s] 하강 속도
 ALIGN_THRESH = 30.0    # [pixel] 정렬 완료 임계값
 ALIGN_HOLD   = 1.0     # [s] 정렬 유지 시간
 DETECT_TIMEOUT = 2.0   # [s] 마커 감지 타임아웃
-LAND_ALT     = 0.4     # [m] 이 고도 이하면 착지 명령
+LAND_ALT     = 0.4     # [m] 이 고도 이하면 착지 명령 (현재 미사용 — 착지는 vehicle_land_detected 로 판단)
 
 
 class PrecisionLandAB(Node):
@@ -90,6 +102,7 @@ class PrecisionLandAB(Node):
         # ================================================================
         # Publishers
         # ================================================================
+        # (현재 미사용 — Offboard heartbeat 는 keyboard_control_ab 가 발행)
         self.offboard_mode_pub = self.create_publisher(
             OffboardControlMode,
             '/fmu/in/offboard_control_mode',
@@ -117,6 +130,10 @@ class PrecisionLandAB(Node):
             String, '/sjcu/mode',
             self._mode_callback, 10
         )
+        # /sjcu/error = [x_error, y_error, z_error]  (w05_aruco 가 발행, 마커 미검출 시 발행 없음)
+        #   x_error : 마커중심x − 화면중심x [px, 오른쪽 +]
+        #   y_error : 마커중심y − 화면중심y [px, 아래 +]
+        #   z_error : 마커 변 길이 평균(px) − target_marker_size  (이 노드에선 사용 안 함)
         self.error_sub = self.create_subscription(
             Float32MultiArray, '/sjcu/error',
             self._error_callback, 10
@@ -241,7 +258,7 @@ class PrecisionLandAB(Node):
             setpoint.position = [float('nan'), float('nan'), float('nan')]
             setpoint.velocity = [self.kbd_vx, self.kbd_vy, self.kbd_vz]
 
-        # keyboard_control_ab가 담당
+        # setpoint 는 이 노드가 발행 (heartbeat 는 keyboard_control_ab 담당)
         self.trajectory_pub.publish(setpoint)
 
     # ================================================================
@@ -344,11 +361,9 @@ class PrecisionLandAB(Node):
     # 헬퍼 함수
     # ================================================================
     def _send_velocity_body(self, vx_body, vy_body, vz, yaw_rate=0.0):
-        """body frame → NED 변환 후 velocity setpoint 발행"""
-        import numpy as np
-        # current yaw는 없으니 0으로 가정 (하방 카메라라 yaw 무관)
-        # 실제론 VehicleAttitude에서 yaw 받아서 변환해야 정확함
-        # 지금은 드론이 마커 위에 있으면 yaw 상관없이 동작
+        """body 속도를 velocity setpoint 로 발행 (※ yaw 회전 없이 NED 에 그대로 넣음)"""
+        # ※ yaw=0 가정 — 기수를 돌린 상태에서는 보정 방향이 어긋남.
+        #    PX4Base.send_velocity_body 처럼 current_yaw 회전이 필요 (base판에서 해결 예정)
 
         timestamp = int(self.get_clock().now().nanoseconds / 1000)
         setpoint           = TrajectorySetpoint()
@@ -378,6 +393,7 @@ class PrecisionLandAB(Node):
         self.get_logger().info('Disarm 완료!')
 
     def _publish_vehicle_command(self, command, param1=0.0, param2=0.0):
+        # (현재 미사용 — _disarm 이 직접 VehicleCommand 를 조립함)
         msg = VehicleCommand()
         msg.command          = command
         msg.param1           = param1

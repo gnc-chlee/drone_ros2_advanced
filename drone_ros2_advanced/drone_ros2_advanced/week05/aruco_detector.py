@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : aruco_detector.py
-# Author  : Choonghyeon Lee (gnc-chlee)
+# File    : aruco_detector.py  (5주차 2강)
+# Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-06-08
 # Version : 2.0.0
 #
@@ -10,18 +10,31 @@
 #   카메라 이미지에서 ArUco 마커를 감지하고
 #   이미지 중심 기준 오차값을 퍼블리시
 #
+#   브리지가 필요한 이유:
+#     Gazebo 카메라는 uXRCE-DDS로 넘어오지 않아 ros_gz_bridge(w05_camera_bridge)가 필요
+#
 #   HUD 표시:
 #     좌상단 : GPS 위도/경도, 로컬 X/Y, 고도
 #     우상단 : 마커 ID, 고도, Err X/Y
 #     하단   : X/Y 오차 게이지 바
 #
 #   구독 토픽:
-#     image_topic (파라미터)
+#     image_topic (파라미터, 기본값 /camera/image_raw)
 #     /fmu/out/vehicle_local_position
 #     /fmu/out/vehicle_global_position
 #
 #   퍼블리시 토픽:
-#     /sjcu/error : [x_error, y_error, z_error]
+#     /sjcu/error : Float32MultiArray [x_error, y_error, z_error]
+#       x_error = 마커중심x − 화면중심x [px, 오른쪽 +]
+#       y_error = 마커중심y − 화면중심y [px, 아래 +]
+#       z_error = 마커 변 길이 평균(px) − target_marker_size [px]
+#       ※ 마커 미검출 프레임에서는 발행하지 않음
+#
+#   실행 방법 (터미널 4개):
+#     터미널 1: cd ~/PX4-Autopilot && PX4_GZ_WORLD=aruco make px4_sitl gz_x500_mono_cam_down
+#     터미널 2: MicroXRCEAgent udp4 -p 8888
+#     터미널 3: ros2 run drone_ros2_advanced w05_camera_bridge     # Gazebo 카메라 → /camera/image_raw
+#     터미널 4: ros2 run drone_ros2_advanced w05_aruco
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced
@@ -37,7 +50,7 @@ from rclpy.qos import (
 )
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
-from px4_msgs.msg import VehicleLocalPosition, VehicleGlobalPosition, SensorGps
+from px4_msgs.msg import VehicleLocalPosition, VehicleGlobalPosition
 
 import cv2
 import cv2.aruco as aruco
@@ -57,10 +70,12 @@ PX4_QOS = QoSProfile(
 # ================================================================
 # 파라미터
 # ================================================================
-IMAGE_WIDTH  = 1920
-IMAGE_HEIGHT = 1080
+# 첫 프레임이 오기 전까지만 쓰는 기본 이미지 크기
+# (실제 크기는 콜백에서 msg.width / msg.height 로 갱신 — x500_mono_cam_down 은 1280x960)
+IMAGE_WIDTH  = 1280
+IMAGE_HEIGHT = 960
 
-ARUCO_DICT         = aruco.DICT_4X4_50
+ARUCO_DICT         = aruco.DICT_4X4_50   # PX4 내장 aruco 월드의 마커(4x4, ID 0)와 호환
 TARGET_MARKER_SIZE = 150
 TARGET_MARKER_ID   = 0
 
@@ -86,7 +101,7 @@ class ArucoDetector(Node):
         # ── 파라미터 ─────────────────────────────────────────────
         self.declare_parameter(
             'image_topic',
-            '/world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/image'
+            '/camera/image_raw'    # 브리지(w05_camera_bridge)가 바꿔 주는 이름
         )
         self.declare_parameter('target_marker_id',   TARGET_MARKER_ID)
         self.declare_parameter('target_marker_size', TARGET_MARKER_SIZE)
@@ -111,7 +126,7 @@ class ArucoDetector(Node):
         )
         self.local_pos_sub = self.create_subscription(
             VehicleLocalPosition,
-            '/fmu/out/vehicle_local_position_v1',
+            '/fmu/out/vehicle_local_position',
             self._local_pos_callback, PX4_QOS
         )
         self.gps_sub = self.create_subscription(
@@ -137,9 +152,14 @@ class ArucoDetector(Node):
         self.last_y_error   = 0.0
         self.detected       = False
 
+        # 실제 이미지 크기 (첫 프레임에서 msg.width / msg.height 로 갱신)
+        self.image_width  = IMAGE_WIDTH
+        self.image_height = IMAGE_HEIGHT
+
         # ── 창 설정 ──────────────────────────────────────────────
         if self.display:
             cv2.namedWindow('ArUco Detector', cv2.WINDOW_NORMAL)
+            # 첫 프레임 전 임시 크기 — 실제 크기는 콜백에서 다시 맞춤
             cv2.resizeWindow('ArUco Detector', IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2)
 
         self.get_logger().info(
@@ -164,11 +184,20 @@ class ArucoDetector(Node):
     # 이미지 콜백
     # ============================================================
     def _image_callback(self, msg: Image):
-        frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
-            msg.height, msg.width, -1
-        )
+        # ── [복붙 영역] ROS Image → OpenCV 프레임 ─────────────────
+        # bytes 한 줄 → (높이, 너비, 채널) 표로 접기 → OpenCV는 BGR 순서
+        frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
         if msg.encoding == 'rgb8':
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            frame = frame[:, :, ::-1]          # RGB → BGR
+        frame = frame.copy()               # 쓰기 가능한 복사본 (frombuffer 결과는 읽기 전용)
+
+        # ── 실제 이미지 크기 저장 (HUD 창 크기·게이지 정규화에 사용) ──
+        if (msg.width, msg.height) != (self.image_width, self.image_height):
+            self.image_width  = msg.width
+            self.image_height = msg.height
+            if self.display:
+                cv2.resizeWindow('ArUco Detector',
+                                 self.image_width // 2, self.image_height // 2)
 
         display_frame = frame.copy()
         gray          = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -203,15 +232,17 @@ class ArucoDetector(Node):
                 h = np.linalg.norm(corner[1] - corner[2])
                 marker_size = float((w + h) / 2.0)
 
+                # 오차 [px] = 마커중심 − 화면중심  (x: 오른쪽 +, y: 아래 +)
                 x_error = mx - cx
                 y_error = my - cy
+                # 크기 오차 [px] = 마커 변 길이 평균 − target_marker_size
                 z_error = marker_size - self.target_size
 
                 self.last_marker_id = marker_id
                 self.last_x_error   = x_error
                 self.last_y_error   = y_error
 
-                # 퍼블리시
+                # 퍼블리시 (마커를 찾은 프레임에서만 — 미검출 시 발행 없음)
                 error_msg      = Float32MultiArray()
                 error_msg.data = [x_error, y_error, z_error]
                 self.error_pub.publish(error_msg)
@@ -322,7 +353,7 @@ class ArucoDetector(Node):
 
             # 오차 바
             ex_norm  = int(max(-bar_half, min(bar_half,
-                          self.last_x_error / (IMAGE_WIDTH/2) * bar_half)))
+                          self.last_x_error / (self.image_width/2) * bar_half)))
             ex_color = COLOR_GREEN if abs(self.last_x_error) < ALIGN_THRESH else COLOR_RED
             if ex_norm != 0:
                 cv2.rectangle(frame,
@@ -351,7 +382,7 @@ class ArucoDetector(Node):
                           (60, 60, 60), -1)
 
             ey_norm  = int(max(-gy_half, min(gy_half,
-                           self.last_y_error / (IMAGE_HEIGHT/2) * gy_half)))
+                           self.last_y_error / (self.image_height/2) * gy_half)))
             ey_color = COLOR_GREEN if abs(self.last_y_error) < ALIGN_THRESH else COLOR_RED
             if ey_norm != 0:
                 cv2.rectangle(frame,

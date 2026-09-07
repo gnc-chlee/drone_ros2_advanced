@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : center_error_viewer.py  (9주차)
+# File    : center_error_viewer.py  (6주차 1강)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-07-07
 # Version : 1.0.0
 #
 # Description:
 #   카메라 기반 드론 제어 "개념" 시각화 - 아직 드론은 안 움직입니다!
+#   ※ 6주차 1강 수업 소재로는 마커 오차 기반 뷰어(marker_error_viewer, 작성 예정)로
+#     교체 예정 — 이 파일은 contour 기반 참고용
 #
 #   화면에 보여주는 것:
 #     - 화면 중앙 십자선 (드론이 바라보는 정면)
@@ -17,12 +19,16 @@
 #   핵심 개념 (PX4 드론 적용 차이점):
 #     물체가 오른쪽에 있다 (x_error +) → 오른쪽으로 회전 (yaw_rate +)
 #     물체가 아래에 있다   (y_error +) → 아래로 이동     (vz +, NED라 +가 하강!)
-#     → 12주차에서 이 값을 진짜 드론 명령으로 보냅니다
+#     → 6주차 2강(정밀착륙)에서 이 값을 진짜 드론 명령으로 보냅니다
 #
-#   실행 방법 (웹캠):
-#     ros2 run drone_ros2_advanced w09_center_error
-#   실행 방법 (Gazebo 카메라):
-#     ros2 run drone_ros2_advanced w09_center_error --ros-args -p use_webcam:=false
+#   실행 방법 (Gazebo 카메라, 터미널 4개):
+#     터미널 1: cd ~/PX4-Autopilot && PX4_GZ_WORLD=aruco make px4_sitl gz_x500_mono_cam_down
+#     터미널 2: MicroXRCEAgent udp4 -p 8888
+#     터미널 3: ros2 run drone_ros2_advanced w05_camera_bridge     # Gazebo 이미지 → /camera/image_raw
+#     터미널 4: ros2 run drone_ros2_advanced w06_center_error --ros-args -p use_webcam:=false
+#
+#   실행 방법 (웹캠 — PX4/Gazebo 없이 노트북 카메라로 개념만 확인):
+#     ros2 run drone_ros2_advanced w06_center_error
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced
@@ -37,10 +43,7 @@ import cv2
 import numpy as np
 
 
-DEFAULT_IMAGE_TOPIC = (
-    '/world/person_follow/model/x500_depth_0/link/camera_link'
-    '/sensor/IMX214/image'
-)
+DEFAULT_IMAGE_TOPIC = '/camera/image_raw'   # w05_camera_bridge 가 Gazebo 이미지를 이 이름으로 옮겨줌
 
 THRESHOLD = 127
 MIN_AREA  = 500
@@ -72,9 +75,12 @@ class CenterErrorViewer(Node):
 
     # ── Gazebo 카메라 모드 ───────────────────────────────────────
     def _image_callback(self, msg: Image):
-        frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
-            msg.height, msg.width, 3)
-        frame = frame[:, :, ::-1].copy()   # RGB → BGR
+        # ── [복붙 영역] ROS Image → OpenCV 프레임 ─────────────────
+        # bytes 한 줄 → (높이, 너비, 채널) 표로 접기 → OpenCV는 BGR 순서
+        frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
+        if msg.encoding == 'rgb8':
+            frame = frame[:, :, ::-1]          # RGB → BGR
+        frame = frame.copy()               # 쓰기 가능한 복사본 (frombuffer 결과는 읽기 전용)
         self._process(frame)
 
     # ============================================================
@@ -90,7 +96,7 @@ class CenterErrorViewer(Node):
         cv2.line(frame, (center_x, center_y - 30),
                  (center_x, center_y + 30), (255, 255, 0), 2)
 
-        # 8주차 복습: 가장 큰 contour 찾기
+        # 5주차 복습(w05_contour): 가장 큰 contour 찾기
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         _, binary = cv2.threshold(

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : contour_demo.py  (8주차)
+# File    : contour_demo.py  (5주차 1강)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-07-07
 # Version : 1.0.0
@@ -16,11 +16,19 @@
 #     - cv2.findContours: 흰 영역의 "테두리"들을 찾아줌
 #     - cv2.contourArea:  면적으로 가장 큰 물체 고르기
 #     - cv2.boundingRect: 물체를 감싸는 사각형 → 중심점 계산
-#     - "물체 중심점"이 나중에 드론 제어의 입력이 됩니다! (10주차~)
+#     - "물체 중심점"이 나중에 드론 제어의 입력이 됩니다! (6주차~)
 #
-#   실행 방법:
-#     ros2 run drone_ros2_advanced w08_contour
+#   실행 방법 (웹캠 전용 — PX4·브리지 불필요):
+#     ros2 run drone_ros2_advanced w05_contour
 #     (웹캠 필요. 어두운 배경에 밝은 물체를 비춰보세요)
+#
+#   웹캠 연결 (VMware):
+#     VM 메뉴 ▸ Removable Devices ▸ (노트북 카메라) ▸ Connect 로 웹캠을 VM에 연결한 뒤
+#     `ls /dev/video*` 로 확인 (/dev/video0 이 보이면 CAMERA_INDEX = 0)
+#
+#   밝은 방 함정:
+#     배경이 밝으면 화면 전체가 가장 큰 contour로 잡힘
+#     → THRESHOLD를 올리거나 어두운 배경 사용
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced
@@ -32,6 +40,7 @@ import cv2
 
 CAMERA_INDEX = 0     # 웹캠 번호 (안 되면 1, 2로 바꿔보세요)
 THRESHOLD    = 127   # 이진화 기준 밝기 (0~255) — 바꿔가며 실험!
+                     # 배경이 밝으면 화면 전체가 가장 큰 contour로 잡힘 → THRESHOLD를 올리거나 어두운 배경 사용
 MIN_AREA     = 500   # 이 면적(픽셀)보다 작은 것은 노이즈로 무시
 
 

@@ -22,11 +22,16 @@ colcon build --packages-select drone_ros2_advanced
 source install/setup.bash
 ```
 
-추가 파이썬 패키지 (해당 주차에 설치):
+추가 설치 (해당 주차에):
 ```bash
-pip install opencv-python   # 5주차~ (비전 실습)
-pip install ultralytics     # 14주차 (YOLO)
+# 5주차~ 비전 실습: Gazebo 카메라 → ROS2 브리지 (Humble + Harmonic 조합용) + 이미지 확인 도구
+sudo apt install ros-humble-ros-gzharmonic ros-humble-rqt-image-view
+# 5주차~ OpenCV (ArUco 포함 — 4.7 이상 필요)
+pip install 'opencv-python>=4.7'
+# 14주차 YOLO
+pip install ultralytics
 ```
+※ Fortress용 `ros-humble-ros-gz*`가 이미 설치돼 있으면 충돌하므로 먼저 제거: `apt list --installed | grep ros-humble-ros-gz`
 
 ## 실습 코드는 두 가지 버전!
 
@@ -47,8 +52,8 @@ pip install ultralytics     # 14주차 (YOLO)
 | 2주차 | PX4-ROS2 연동 / 키보드 제어 노드 실습 | `first_node`, `position_listener`, `keyboard_control` |
 | 3주차 | 단일 Waypoint / 다중 Waypoint 비행 설계 | `w03_takeoff_*`, `w03_multi_*`, `w03_yaml_*`, `w03_mission_*` |
 | 4주차 | Gazebo World 구조와 SDF / 커스텀 World 실습 | (추가 예정) |
-| 5주차 | ROS2 카메라 토픽과 OpenCV / ArUco 마커 인식 | `w05_camera_viewer`, `w05_contour`, `w05_aruco` |
-| 6주차 | 마커 기준 오차 계산과 제어 / 정밀착륙 노드 | `w06_center_error`, `w06_keyboard_v2`, `w06_precision_land` |
+| 5주차 | ROS2 카메라 토픽과 OpenCV / ArUco 마커 인식 | `w05_camera_bridge` + `w05_camera_viewer`, `w05_contour`, `w05_aruco` |
+| 6주차 | 마커 기준 오차 계산과 제어 / 정밀착륙 노드 | `w06_center_error` / 정밀착륙 조합: `w05_aruco` + `w06_keyboard_ab` + `w06_precision_land` |
 | 7주차 | **중간고사** | - |
 | 8주차 | OpenCV DNN 기반 객체 인식 / 사람 인식 노드 | `w08_face_detector` (DNN판 추가 예정) |
 | 9주차 | 사람 인식·추종 비행 제어 설계 / 추종 비행 실습 | `w09_face_command`, `w09_p_control`, `w09_follow_*` |
@@ -72,6 +77,26 @@ source ~/ros2_ws/install/setup.bash
 ros2 run drone_ros2_advanced position_listener
 ```
 
+## 5~6주차 카메라 실습 실행 순서
+Gazebo 카메라 이미지는 uXRCE-DDS Agent로 넘어오지 않습니다 — **ros_gz_bridge라는 두 번째 다리**가 필요합니다.
+```bash
+# 터미널 1: 하방 카메라 기체 + ArUco 마커 월드 (PX4 내장). VM이면 HEADLESS=1 을 앞에 붙여 GUI 부하를 줄일 수 있음
+cd ~/PX4-Autopilot && PX4_GZ_WORLD=aruco make px4_sitl gz_x500_mono_cam_down
+
+# 터미널 2: uXRCE-DDS Agent
+MicroXRCEAgent udp4 -p 8888
+
+# 터미널 3: 카메라 브리지 (Gazebo → /camera/image_raw)
+ros2 run drone_ros2_advanced w05_camera_bridge
+
+# 터미널 4: 실습 노드
+ros2 run drone_ros2_advanced w05_camera_viewer
+```
+- 확인: `ros2 topic hz /camera/image_raw` 에 수치가 찍히면 성공. `rqt_image_view` 로 화면도 볼 수 있음
+- 월드/기체가 다르면 브리지에 인자: `w05_camera_bridge --world default --model x500_depth_0 --sensor IMX214`
+- 6주차 접근 실습(마커에서 떨어져 시작): `PX4_GZ_MODEL_POSE="2,1,0,0,0,0" PX4_GZ_WORLD=aruco make px4_sitl gz_x500_mono_cam_down`
+- VM에서 카메라가 너무 느리면 `~/PX4-Autopilot/Tools/simulation/gz/models/mono_cam/model.sdf` 의 해상도를 640x480, update_rate 를 15 로 낮춰 보세요
+
 ## 폴더 구조
 ```
 drone_ros2_advanced/
@@ -92,5 +117,6 @@ drone_ros2_advanced/
 
 ## 참고
 - 트러블슈팅: Gazebo 화면이 검게 나오면 `export LIBGL_ALWAYS_SOFTWARE=1` (VM 환경)
-- 비전 실습(5주차~)은 카메라 렌더링이 필요하므로 GPU가 있는 네이티브 Ubuntu 권장
+- 트러블슈팅: `/camera/image_raw` 가 안 보이면 → 터미널 3의 `w05_camera_bridge` 실행 여부, `gz topic -l | grep image` 로 Gazebo 쪽 토픽 확인
+- 비전 실습(5주차~)은 카메라 렌더링 부담이 큼 — VM에서는 `HEADLESS=1` + 해상도 축소 권장, GPU가 있는 네이티브 Ubuntu면 더 원활
 - YOLOv8n은 CPU 환경에서도 동작 가능 (저사양 PC 대응)

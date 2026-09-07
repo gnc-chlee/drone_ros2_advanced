@@ -41,11 +41,14 @@ setup(
             'w03_mission_base = drone_ros2_advanced.week03.waypoint_mission_base:main',
 
             # ── 5주차: 카메라 · OpenCV · ArUco ───────────────────
+            'w05_camera_bridge = drone_ros2_advanced.week05.camera_bridge:main',
             'w05_camera_viewer = drone_ros2_advanced.week05.camera_viewer:main',
             'w05_contour = drone_ros2_advanced.week05.contour_demo:main',
             'w05_aruco = drone_ros2_advanced.week05.aruco_detector:main',
 
             # ── 6주차: 오차 제어 · 정밀착륙 ──────────────────────
+            #    동작 조합: w05_aruco + w06_keyboard_ab + w06_precision_land
+            #    (w06_keyboard_v2 는 참고용 — /sjcu/mode 값이 달라 precision_land 와 짝이 아님)
             'w06_center_error = drone_ros2_advanced.week06.center_error_viewer:main',
             'w06_keyboard_v2 = drone_ros2_advanced.week06.keyboard_control_v2:main',
             'w06_keyboard_ab = drone_ros2_advanced.week06.keyboard_control_ab:main',
