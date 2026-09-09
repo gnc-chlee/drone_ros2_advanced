@@ -1,0 +1,20 @@
+# ==============================================================================
+# Waypoint 미션 설정 파일 — 삼각형 (3주차 2강 시연용)
+#
+# 기본 파일(waypoints.yaml)은 사각형, 이 파일은 삼각형.
+# 코드는 한 줄도 안 바꾸고 파일만 바꿔서 경로가 달라지는 것을 보여준다.
+#
+# 쓰는 법 (둘 중 하나):
+#   A) 이 내용을 waypoints.yaml에 덮어쓰고 재빌드 (수업 기본 방식)
+#      cp config/triangle.yaml config/waypoints.yaml && colcon build --packages-select drone_ros2_advanced
+#   B) 재빌드 없이 파일을 직접 지정 (강사 노트)
+#      ros2 run drone_ros2_advanced w03_yaml_raw --ros-args -p waypoint_file:=$(ros2 pkg prefix drone_ros2_advanced)/share/drone_ros2_advanced/config/triangle.yaml
+# ==============================================================================
+takeoff_altitude: 5.0
+hold_sec: 5.0
+tolerance: 0.5
+
+waypoints:
+  - [6.0, 0.0]    # WP1: 북쪽 6m
+  - [3.0, 5.0]    # WP2: 북동쪽 (삼각형 꼭짓점)
+  - [0.0, 0.0]    # WP3: 출발점 복귀

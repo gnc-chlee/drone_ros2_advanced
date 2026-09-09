@@ -1,3 +1,4 @@
+from glob import glob
 from setuptools import find_packages, setup
 
 package_name = 'drone_ros2_advanced'
@@ -10,7 +11,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/config', ['config/waypoints.yaml']),
+        ('share/' + package_name + '/config', glob('config/*.yaml')),   # 미션 파일 전부 설치
     ],
     install_requires=['setuptools'],
     zip_safe=True,
