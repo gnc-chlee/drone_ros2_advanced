@@ -117,7 +117,8 @@ class TakeoffSingleRaw(Node):
             )
 
         # ── 3. 1초간 heartbeat를 쌓은 뒤 Arm + Offboard 전환 ─────
-        #    원리: PX4는 setpoint가 미리 흐르고 있어야 Offboard를 허용
+        #    원리: PX4는 heartbeat(OffboardControlMode)가 1초 이상 미리 흐르고 있어야 Offboard를 허용
+        #    (setpoint도 함께 흘려두는 것이 본 강의 표준 절차)
         if not self.armed_sent and elapsed >= 1.0:
             self._set_offboard_mode()
             self._arm()
