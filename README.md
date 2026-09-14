@@ -33,6 +33,56 @@ pip install ultralytics
 ```
 ※ Fortress용 `ros-humble-ros-gz*`가 이미 설치돼 있으면 충돌하므로 먼저 제거: `apt list --installed | grep ros-humble-ros-gz`
 
+## 매주 실습 전에 — 최신 코드 받기
+
+주차마다 코드와 자료가 추가되므로, **각 주차 실습을 시작하기 전에 한 번** 받아 주세요.
+
+```bash
+cd ~/ros2_ws/src/drone_ros2_advanced && git pull
+cd ~/ros2_ws && colcon build --packages-select drone_ros2_advanced && source install/setup.bash
+```
+
+빌드까지 해야 새로 추가된 노드를 `ros2 run` 으로 실행할 수 있습니다.
+
+### `git pull` 이 거부될 때
+
+실습하면서 파일을 고쳤다면 이런 메시지가 나옵니다.
+
+```
+error: Your local changes to the following files would be overwritten by merge
+```
+
+둘 중 하나를 고르세요.
+
+```bash
+# (1) 내가 고친 내용을 살리고 싶다
+git stash        # 내 수정 임시 보관
+git pull
+git stash pop    # 다시 꺼내기
+```
+
+```bash
+# (2) 내가 고친 내용은 실험용이라 버려도 된다 (가장 간단)
+git checkout -- .
+git pull
+```
+
+> 내가 **새로 만든 파일**(예: `week02/my_node.py`, `config/my_mission.yaml`)은 어느 쪽이든 지워지지 않습니다.
+
+### 충돌을 아예 피하는 습관
+
+제공된 파일을 직접 고치는 대신 **내 파일을 새로 만들어** 쓰면 `git pull` 과 절대 부딪히지 않습니다.
+
+```bash
+# waypoints.yaml 을 고치지 말고, 복사해서 내 미션을 만든다
+cp config/waypoints.yaml config/my_mission.yaml
+```
+
+```bash
+# 실행할 때 내 파일을 지정 (config/*.yaml 은 빌드하면 자동 설치됨)
+ros2 run drone_ros2_advanced w03_mission_raw --ros-args   -p waypoint_file:=$(ros2 pkg prefix drone_ros2_advanced)/share/drone_ros2_advanced/config/my_mission.yaml
+```
+
 ## 실습 코드는 두 가지 버전!
 
 | 버전 | 설명 |
