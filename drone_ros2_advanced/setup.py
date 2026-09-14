@@ -12,6 +12,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', glob('config/*.yaml')),   # 미션 파일 전부 설치
+        ('share/' + package_name + '/worlds', glob('worlds/*.sdf')),    # 4주차 커스텀 World
     ],
     install_requires=['setuptools'],
     zip_safe=True,

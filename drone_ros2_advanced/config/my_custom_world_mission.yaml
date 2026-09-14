@@ -1,0 +1,26 @@
+# ==============================================================================
+# my_custom_world 전용 미션 (4주차 2강)
+#
+# worlds/my_custom_world.sdf 에 놓은 물체들 위를 차례로 날아갑니다.
+# Gazebo(ENU)에 놓은 좌표를 PX4(NED)로 바꿔 적은 것이 이 파일의 핵심입니다.
+#
+#   물체          Gazebo <pose> x y (ENU)      →  여기 waypoints (NED 북, 동)
+#   marker_a          5   3                    →  [ 3.0,  5.0]
+#   pillar_east       8  -4                    →  [-4.0,  8.0]
+#   box_west         -6   0                    →  [ 0.0, -6.0]
+#
+#   변환 규칙: 북 = ENU의 y,  동 = ENU의 x   (x와 y를 맞바꾼다)
+#
+# 실행:
+#   ros2 run drone_ros2_advanced w03_mission_raw --ros-args \
+#     -p waypoint_file:=$(ros2 pkg prefix drone_ros2_advanced)/share/drone_ros2_advanced/config/my_custom_world_mission.yaml
+# ==============================================================================
+takeoff_altitude: 5.0    # 장애물(최대 4m)보다 높게
+hold_sec: 5.0
+tolerance: 0.5
+
+waypoints:
+  - [3.0, 5.0]     # WP1: 마커 위
+  - [-4.0, 8.0]    # WP2: 원기둥 위
+  - [0.0, -6.0]    # WP3: 박스 위
+  - [0.0, 0.0]     # WP4: 출발점 복귀
