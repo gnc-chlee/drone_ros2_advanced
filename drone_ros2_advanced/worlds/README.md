@@ -108,6 +108,25 @@ gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construc
 `<include>` 로는 형상이 로드되지 않습니다. 사람 모델이 꼭 필요하면 `Casual female` 을 쓰되,
 4096×4096 텍스처 때문에 VM에서는 느립니다(8~9주차에 재검토).
 
+### 라이선스와 출처
+
+이 저장소가 쓰는 Fuel 모델 6개는 **전부 CC0 1.0 Universal(퍼블릭 도메인 헌정)** 이라 자유롭게 쓰고 배포할 수 있습니다.
+법적으로 출처 표기 의무는 없지만, 수업 자료에는 아래 표를 남깁니다.
+
+| 모델 | 버전 | 제작 | 라이선스 |
+|------|------|------|----------|
+| Table | 4 | Open Robotics | CC0 1.0 |
+| Jersey Barrier | 6 | Open Robotics | CC0 1.0 |
+| Construction Cone | 3 | Open Robotics | CC0 1.0 |
+| Fire hydrant | 3 | Open Robotics | CC0 1.0 |
+| Pine Tree | 6 | Open Robotics | CC0 1.0 |
+| Oak tree | 7 | Open Robotics | CC0 1.0 |
+
+출처: Gazebo Fuel <https://app.gazebosim.org/fuel/models> / CC0 전문 <https://creativecommons.org/publicdomain/zero/1.0/>
+
+> **다른 모델을 고를 때는 라이선스를 반드시 확인하세요.** Fuel에는 출처 표기가 의무인 CC-BY 모델도 있습니다.
+> 모델 페이지에 라이선스와 인용 정보(`@online{...}` 형식)가 함께 표시됩니다.
+
 ### Fuel 관련 주의
 
 - URI는 `https://fuel.gazebosim.org/1.0/OpenRobotics/models/<이름>` 형식. 이름의 **공백은 그대로** 두고, 셸 명령에서는 따옴표로 감쌀 것

@@ -20,6 +20,11 @@
 
     인터넷이 불안하면 로컬 전용인 my_custom_world.sdf 를 쓰세요.
 
+  모델 출처: Table / Jersey Barrier / Pine Tree / Construction Cone
+            - 제작 Open Robotics, 라이선스 CC0 1.0 (퍼블릭 도메인)
+            - https://app.gazebosim.org/fuel/models
+            ※ 다른 모델을 쓸 때는 라이선스를 확인하세요 (CC-BY 모델도 있음)
+
   설치와 실행:
     cp my_custom_world_fuel.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
     cd ~/PX4-Autopilot
