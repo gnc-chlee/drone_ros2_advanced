@@ -1,7 +1,9 @@
 # worlds — 4주차 커스텀 Gazebo World
 
-`my_custom_world.sdf` 는 4주차 실습의 **완성 예시**입니다. PX4 내장 `aruco.sdf` 를 복사해
-마커를 원점 밖으로 옮기고 장애물 세 개(박스·벽·원기둥)를 놓았습니다.
+`my_custom_world.sdf` 는 4주차 실습의 **시연 시작점**입니다. PX4 내장 `aruco.sdf` 를 복사해
+마커를 원점 밖으로 옮기고 Fuel 모델(Table)을 하나만 놓아 두었습니다 — 수업에서 `<include>` 를
+하나씩 추가하며 배치를 익히는 용도입니다.
+모델을 여러 개 배치한 **완성 예시**는 `my_custom_world_fuel.sdf` 입니다.
 
 ## 설치 (한 번만)
 
@@ -46,20 +48,23 @@ SDF의 `<pose>` 여섯 숫자는 `x y z roll pitch yaw` 이고 **ENU** 입니다
 
 이 월드에 놓인 물체의 좌표 대응:
 
-| 물체 | Gazebo `<pose>` x y z | PX4 (북, 동) |
-|------|----------------------|--------------|
-| `marker_a` (ArUco 마커) | 5 3 0.001 | (3, 5) |
-| `box_west` (박스 2×2×3) | -6 0 1.5 | (0, −6) |
-| `wall_north` (벽 8×0.5×2) | 0 9 1 | (9, 0) |
-| `pillar_east` (원기둥 r0.6 h4) | 8 -4 2 | (−4, 8) |
+| 물체 | 있는 월드 | Gazebo `<pose>` x y z | PX4 (북, 동) |
+|------|-----------|----------------------|--------------|
+| `marker_a` (ArUco 마커) | 둘 다 | 5 3 0.001 | (3, 5) |
+| `table_1` (테이블) | 둘 다 | -6 0 0 | (0, −6) |
+| `barrier_1` (방호벽) | fuel판 | 0 9 0 | (9, 0) |
+| `barrier_2` (방호벽) | fuel판 | -5 9 0 | (9, −5) |
+| `tree_1` (소나무) | fuel판 | 8 -4 0 | (−4, 8) |
+| `cone_1` (공사용 콘) | fuel판 | 2 -2 0 | (−2, 2) |
 
 `config/my_custom_world_mission.yaml` 이 이 좌표들을 NED로 적어둔 미션 파일입니다.
+**두 월드에 공통인 물체(테이블 → 마커)만 쓰므로 어느 월드에서든 그대로 비행됩니다.**
 미션 노드는 waypoint에 도달하면 멈추지 않고 곧바로 다음 목표로 가며, 목록을 다 돌면 **그 자리에서 착륙**합니다.
 그래서 마커를 마지막에 두어 **마커 위에 내려앉는 것**으로 좌표 변환을 확인합니다.
 ※ 위 대응표는 월드 원점과 PX4 로컬 원점이 같다는 전제(기본 스폰 위치)에서 성립합니다.
 
 ```bash
-# 박스 → 원기둥 → 마커 순서로 비행한 뒤 마커 위에 착륙 (고도 5m)
+# 테이블 → 마커 순서로 비행한 뒤 마커 위에 착륙 (고도 5m)
 ros2 run drone_ros2_advanced w03_mission_raw --ros-args \
   -p waypoint_file:=$(ros2 pkg prefix drone_ros2_advanced)/share/drone_ros2_advanced/config/my_custom_world_mission.yaml
 ```

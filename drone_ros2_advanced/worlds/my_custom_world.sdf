@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   ============================================================================
-  my_custom_world.sdf  (4주차 - 커스텀 World 완성 예시)
+  my_custom_world.sdf  (4주차 - 커스텀 World 시연 시작점)
 
   PX4 v1.16 내장 aruco.sdf 를 복사해서 만든 실습용 월드입니다.
-  마커를 원점이 아닌 곳으로 옮기고, 장애물 세 개를 놓았습니다.
+  마커를 원점이 아닌 곳으로 옮기고, Fuel 모델을 하나만 놓아 두었습니다.
+  수업에서는 여기에 <include> 블록을 하나씩 추가하며 배치를 익힙니다.
+  (모델을 여러 개 배치한 완성 예시는 my_custom_world_fuel.sdf 참고)
 
   ★ 가장 중요한 규칙 ★
     파일 이름(my_custom_world.sdf)과 아래 <world name="my_custom_world"> 가
@@ -19,6 +21,13 @@
     → 일부만 적어두면 나머지가 사라져서 드론이 아예 안 뜹니다.
     → 그래서 이 파일에는 plugin 을 쓰지 않습니다 (PX4 기본 월드들과 동일).
 
+  ★ Fuel 모델은 첫 실행 때 인터넷이 필요합니다 ★
+    Table 모델은 처음 한 번만 내려받아 ~/.gz/fuel 에 저장되고,
+    그다음부터는 인터넷 없이 실행됩니다.
+    **못 받으면 이 모델만 빠지는 게 아니라 월드 전체가 안 뜹니다.**
+    실습 전에 미리 받아두세요:
+      gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Table"
+
   설치와 실행:
     cp my_custom_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
     cd ~/PX4-Autopilot
@@ -29,6 +38,8 @@
     PX4  setpoint 는 NED = x(북) y(동) z(아래)
     → 이 파일의 마커 <pose>5 3 …> 은 "동쪽 5m, 북쪽 3m"
     → PX4 좌표로는 (북 3, 동 5) = send_position(3.0, 5.0, -5.0)
+
+  모델 출처: arucotag (PX4 내장) / Table — Open Robotics, CC0 1.0
   ============================================================================
 -->
 <sdf version="1.9">
@@ -131,6 +142,7 @@
 
     <!-- ========================================================
          여기서부터가 "내가 놓는 것" — 4주차 실습 영역
+         아래 <include> 를 복사해 모델을 하나씩 늘려 보세요.
          ======================================================== -->
 
     <!-- [1] ArUco 마커 — PX4에 이미 있는 모델을 불러와 위치만 지정
@@ -143,82 +155,13 @@
       <pose>5 3 0.001 0 0 0</pose>
     </include>
 
-    <!-- [2] 장애물 박스 — 모델을 직접 정의 (Fuel 접속 불필요)
-         static: 고정(중력 영향 없음) / collision: 실제로 부딪힘 / visual: 눈에 보임
-         z 값은 박스 '중심' 높이 → 높이 3m 박스는 z=1.5 여야 바닥에 붙음 -->
-    <model name="box_west">
-      <pose>-6 0 1.5 0 0 0</pose>
-      <static>true</static>
-      <link name="link">
-        <collision name="collision">
-          <geometry>
-            <box><size>2 2 3</size></box>
-          </geometry>
-        </collision>
-        <visual name="visual">
-          <geometry>
-            <box><size>2 2 3</size></box>
-          </geometry>
-          <material>
-            <ambient>0.3 0.3 0.3 1</ambient>
-            <diffuse>0.7 0.7 0.7 1</diffuse>
-            <specular>1 1 1 1</specular>
-          </material>
-        </visual>
-      </link>
-    </model>
-
-    <!-- [3] 벽 — 길쭉한 박스. 11주차 장애물 회피 실습에서 다시 씁니다 -->
-    <model name="wall_north">
-      <pose>0 9 1 0 0 0</pose>
-      <static>true</static>
-      <link name="link">
-        <collision name="collision">
-          <geometry>
-            <box><size>8 0.5 2</size></box>
-          </geometry>
-        </collision>
-        <visual name="visual">
-          <geometry>
-            <box><size>8 0.5 2</size></box>
-          </geometry>
-          <material>
-            <ambient>0.4 0.2 0.2 1</ambient>
-            <diffuse>0.8 0.4 0.4 1</diffuse>
-            <specular>0.5 0.5 0.5 1</specular>
-          </material>
-        </visual>
-      </link>
-    </model>
-
-    <!-- [4] 원기둥 — 박스 말고 다른 모양도 됩니다 (geometry 만 바꾸면 끝) -->
-    <model name="pillar_east">
-      <pose>8 -4 2 0 0 0</pose>
-      <static>true</static>
-      <link name="link">
-        <collision name="collision">
-          <geometry>
-            <cylinder>
-              <radius>0.6</radius>
-              <length>4</length>
-            </cylinder>
-          </geometry>
-        </collision>
-        <visual name="visual">
-          <geometry>
-            <cylinder>
-              <radius>0.6</radius>
-              <length>4</length>
-            </cylinder>
-          </geometry>
-          <material>
-            <ambient>0.2 0.3 0.4 1</ambient>
-            <diffuse>0.4 0.6 0.8 1</diffuse>
-            <specular>0.5 0.5 0.5 1</specular>
-          </material>
-        </visual>
-      </link>
-    </model>
+    <!-- [2] 테이블 — Fuel(온라인 카탈로그)에서 가져온 모델
+         주소는 모델 페이지의 인용 블록에 있는 url={...} 을 그대로 복사한 것 -->
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Table</uri>
+      <name>table_1</name>          <!-- 같은 모델 여러 개면 이름을 다르게! -->
+      <pose>-6 0 0 0 0 0</pose>     <!-- x(동) y(북) z(위) roll pitch yaw -->
+    </include>
 
   </world>
 </sdf>
