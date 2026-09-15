@@ -64,6 +64,57 @@ ros2 run drone_ros2_advanced w03_mission_raw --ros-args \
   -p waypoint_file:=$(ros2 pkg prefix drone_ros2_advanced)/share/drone_ros2_advanced/config/my_custom_world_mission.yaml
 ```
 
+## Fuel 모델 쓰기 (my_custom_world_fuel.sdf)
+
+`my_custom_world_fuel.sdf` 는 같은 위치에 **Fuel(온라인 모델 저장소)** 모델을 놓은 버전입니다.
+직접 도형을 만드는 대신 카탈로그에서 골라 `<pose>` 만 지정합니다.
+
+```xml
+<include>
+  <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Table</uri>
+  <name>table_1</name>          <!-- 같은 모델 여러 개면 이름을 다르게! -->
+  <pose>-6 0 0 0 0 0</pose>     <!-- x(동) y(북) z(위) roll pitch yaw -->
+</include>
+```
+
+### ★ 실습 전에 미리 받아두세요
+
+Fuel 모델은 **첫 실행 때 내려받아** `~/.gz/fuel` 에 저장되고, 그 뒤로는 인터넷 없이 실행됩니다.
+문제는 **모델 하나라도 못 받으면 월드 전체가 안 뜬다**는 점입니다(모델만 빠지는 게 아닙니다).
+
+```bash
+gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Table"
+gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Jersey Barrier"
+gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Pine Tree"
+gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construction Cone"
+```
+
+받아졌는지 확인: `ls ~/.gz/fuel/fuel.gazebosim.org/OpenRobotics/models/`
+
+### 검증된 모델 목록 (VM 소프트웨어 렌더링 기준)
+
+| 모델 | 이름 (URI 뒤에 붙일 것) | 크기 | 고정? | 메모 |
+|------|------------------------|------|-------|------|
+| 테이블 | `Table` | 1.5×0.8×1.0 m | 고정 | **가장 가벼움** — 메쉬 없이 박스·원통뿐. 상판(1m)에 착륙도 가능 |
+| 방호벽 | `Jersey Barrier` | 4.07×0.81×1.14 m | 고정 | 파일 최소(167KB), 길어서 잘 보임. 벽·통로 만들기 좋음 |
+| 소나무 | `Pine Tree` | 큼 | 고정 | 가볍지만 잎이 반투명이라 **5그루 이내** |
+| 참나무 | `Oak tree` | 큼 | 고정 | 소나무와 동급 (※ 이름의 t 는 소문자) |
+| 소화전 | `Fire hydrant` | 0.42×0.42×0.93 m | 고정 | 가볍지만 작아서 눈에 덜 띔 |
+| 공사용 콘 | `Construction Cone` | 0.5×0.5×1.09 m | **움직임** | 드론이 스치면 넘어짐 — 충돌 시연에 좋음 |
+| SUV | `SUV` | 차 한 대 | 고정 | 텍스처 1024×1024 두 장 — VM에서 1대까지 |
+| 종이상자 | `Cardboard box` | 0.5×0.4×0.3 m | **움직임** | 모델에 z=0.15가 내장돼 있어 `<pose>` z를 0으로 두면 절반이 묻힘 |
+
+**쓰지 말 것**: `Standing person`, `Walking person` — 모델 안의 메쉬 경로가 Fuel 등록명과 달라서
+`<include>` 로는 형상이 로드되지 않습니다. 사람 모델이 꼭 필요하면 `Casual female` 을 쓰되,
+4096×4096 텍스처 때문에 VM에서는 느립니다(8~9주차에 재검토).
+
+### Fuel 관련 주의
+
+- URI는 `https://fuel.gazebosim.org/1.0/OpenRobotics/models/<이름>` 형식. 이름의 **공백은 그대로** 두고, 셸 명령에서는 따옴표로 감쌀 것
+- 같은 모델을 여러 개 놓을 때는 `<name>` 을 반드시 다르게 (이름이 겹치면 하나만 나옴)
+- 각 모델은 자기 원점 위치가 달라서, `<pose>` 의 z는 0으로 두고 **뜨거나 묻히면 그때 조정**
+- 캐시를 통째로 배포할 수도 있습니다: `tar czf gz-fuel-cache.tgz -C ~/.gz/fuel fuel.gazebosim.org` → 학생이 `~/.gz/fuel` 에 풀기
+
 ## 자주 나는 오류
 
 | 증상 | 원인 | 해결 |

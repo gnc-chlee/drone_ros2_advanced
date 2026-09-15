@@ -158,6 +158,15 @@ cd ~/PX4-Autopilot && PX4_GZ_WORLD=my_custom_world make px4_sitl gz_x500
 - 규칙: `<world>` 바로 아래에 `<plugin>` 을 쓰지 말 것 (PX4가 자동으로 붙이는 13개 시스템이 취소됨)
 - 자세한 설명과 좌표 변환표는 [`worlds/README.md`](drone_ros2_advanced/worlds/README.md)
 
+Fuel(온라인 모델 저장소) 모델을 놓은 `my_custom_world_fuel.sdf` 도 있습니다. 물체 위치가 같아 **같은 미션 파일로 둘 다 비행**됩니다.
+Fuel 모델은 첫 실행 때 받아지지만 **하나라도 못 받으면 월드 전체가 안 뜨므로**, 실습 전에 미리 받아 두세요.
+```bash
+gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Table"
+gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Jersey Barrier"
+gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Pine Tree"
+gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construction Cone"
+```
+
 ## 폴더 구조
 ```
 drone_ros2_advanced/
