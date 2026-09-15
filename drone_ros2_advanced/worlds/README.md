@@ -77,6 +77,29 @@ ros2 run drone_ros2_advanced w03_mission_raw --ros-args \
 </include>
 ```
 
+### 내가 원하는 모델 쓰기 — 주소 확인
+
+Fuel 사이트에서 마음에 드는 모델을 찾았다면, `<uri>` 에 넣을 주소를 정확히 알아내야 합니다.
+
+| | 주소 | |
+|---|---|---|
+| 브라우저 주소창 | `https://app.gazebosim.org/OpenRobotics/fuel/models/Table` | ✗ 웹페이지 주소라 SDF에서 동작 안 함 |
+| SDF `<uri>` | `https://fuel.gazebosim.org/1.0/OpenRobotics/models/Table` | ✓ 호스트가 `fuel`, 중간에 `/1.0/` |
+
+가장 확실한 방법은 **모델 페이지의 인용(citation) 블록**에서 `url={...}` 안의 주소를 그대로 복사하는 것입니다.
+
+```
+@online{GazeboFuel-OpenRobotics-Table,
+    title={Table}, organization={Open Robotics}, date={2023}, month={September}, day={4},
+    author={OpenRobotics},
+    url={https://fuel.gazebosim.org/1.0/OpenRobotics/models/Table},    ← 이 줄
+}
+```
+
+주소 구조는 `https://fuel.gazebosim.org/1.0/<소유자>/models/<모델 이름>` 입니다.
+같은 이름을 다른 사람이 올린 경우가 있으므로 **소유자까지 맞아야** 합니다.
+모델 이름의 공백은 SDF에서 그대로 두고, 셸 명령에서만 따옴표로 감쌉니다.
+
 ### ★ 실습 전에 미리 받아두세요
 
 Fuel 모델은 **첫 실행 때 내려받아** `~/.gz/fuel` 에 저장되고, 그 뒤로는 인터넷 없이 실행됩니다.
