@@ -31,7 +31,7 @@ PX4_GZ_WORLD=my_custom_world make px4_sitl gz_x500_mono_cam_down
 | 규칙 | 이유 |
 |------|------|
 | **파일명 = `<world name>`** | PX4가 `PX4_GZ_WORLD` 값을 파일 경로와 Gazebo 월드 이름 양쪽에 쓴다. 다르면 `Timed out waiting for Gazebo world` 로 종료 |
-| **`<world>` 바로 아래 `<plugin>` 금지** | PX4는 Physics·Imu·NavSat·Sensors 등 13가지를 `server.config` 로 자동 적용하는데, 월드에 plugin이 하나라도 있으면 그 자동 적용이 통째로 취소된다 |
+| **`<world>` 바로 아래 시스템 `<plugin>` 금지** | PX4는 Physics·Imu·NavSat·Sensors 등 13가지를 `server.config` 로 자동 적용하는데, 월드 직계에 plugin이 하나라도 있으면 그 자동 적용이 통째로 취소된다 (모델·GUI 플러그인은 해당 없음) |
 | **`make px4_sitl gz_x500_<월드>` 형태는 쓰지 않기** | 그 타깃은 빌드 설정 시점에 폴더를 훑어 만들어지므로 새 월드에는 없다. 항상 `PX4_GZ_WORLD=` 방식으로 |
 
 ## 좌표 — Gazebo(ENU) ↔ PX4(NED)
@@ -54,9 +54,12 @@ SDF의 `<pose>` 여섯 숫자는 `x y z roll pitch yaw` 이고 **ENU** 입니다
 | `pillar_east` (원기둥 r0.6 h4) | 8 -4 2 | (−4, 8) |
 
 `config/my_custom_world_mission.yaml` 이 이 좌표들을 NED로 적어둔 미션 파일입니다.
+미션 노드는 waypoint에 도달하면 멈추지 않고 곧바로 다음 목표로 가며, 목록을 다 돌면 **그 자리에서 착륙**합니다.
+그래서 마커를 마지막에 두어 **마커 위에 내려앉는 것**으로 좌표 변환을 확인합니다.
+※ 위 대응표는 월드 원점과 PX4 로컬 원점이 같다는 전제(기본 스폰 위치)에서 성립합니다.
 
 ```bash
-# 마커 → 원기둥 → 박스 → 복귀 순서로 자동 비행 (고도 5m)
+# 박스 → 원기둥 → 마커 순서로 비행한 뒤 마커 위에 착륙 (고도 5m)
 ros2 run drone_ros2_advanced w03_mission_raw --ros-args \
   -p waypoint_file:=$(ros2 pkg prefix drone_ros2_advanced)/share/drone_ros2_advanced/config/my_custom_world_mission.yaml
 ```
@@ -69,11 +72,12 @@ ros2 run drone_ros2_advanced w03_mission_raw --ros-args \
 | Gazebo는 뜨는데 드론이 없음 | 위와 같은 원인 | 위와 같음 |
 | 시동 거부 / `ekf2 missing data` | `<world>` 직계에 plugin을 일부만 넣어 server.config가 취소됨 | 월드에서 plugin을 모두 빼기 |
 | 모델이 보이는데 통과함 | `<collision>` 없음 | `<visual>` 과 같은 geometry로 `<collision>` 추가 |
-| 모델이 땅에 반쯤 묻힘 | `<pose>` 의 z는 물체 **중심** 높이 | 높이 h 박스는 z = h/2 |
+| 모델이 땅에 반쯤 묻힘 | `<pose>` 의 z는 **모델 원점** 높이 | 원점이 도형 중앙이면 높이 h 박스는 z = h/2 |
 | 모델이 안 보임 | `model://` 이름이 PX4 models 폴더에 없음 | `ls ~/PX4-Autopilot/Tools/simulation/gz/models` 로 확인 |
 
 ## 참고
 
+- 월드를 바꿔 실행할 때는 **기존 PX4·Gazebo를 먼저 종료**하세요. Gazebo 서버가 떠 있으면 `PX4_GZ_WORLD` 가 무시되고 이전 월드가 재사용됩니다 (로그에 `gazebo already running world:`)
 - `Tools/simulation/gz` 는 git 서브모듈이라 여기에 파일을 넣으면 PX4 저장소가 변경된 것으로 표시됩니다. 실습에는 문제없습니다.
 - PX4 v1.16 기본 제공 월드: `aruco`, `baylands`, `default`, `forest`, `frictionless`, `lawn`, `moving_platform`, `rover`, `walls`, `windy`
 - 장애물이 더 필요하면 `walls` 월드를 참고하세요 (박스 4개가 인라인 `<model>` 로 정의돼 있음).

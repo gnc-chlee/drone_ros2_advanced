@@ -1,26 +1,32 @@
 # ==============================================================================
 # my_custom_world 전용 미션 (4주차 2강)
 #
-# worlds/my_custom_world.sdf 에 놓은 물체들 위를 차례로 날아갑니다.
+# worlds/my_custom_world.sdf 에 놓은 물체들 위를 차례로 날아간 뒤,
+# 마지막에 **내가 놓은 마커 위에서 착륙**합니다.
+# (미션 노드는 waypoint를 다 돌면 그 자리에서 착륙합니다)
+#
 # Gazebo(ENU)에 놓은 좌표를 PX4(NED)로 바꿔 적은 것이 이 파일의 핵심입니다.
 #
 #   물체          Gazebo <pose> x y (ENU)      →  여기 waypoints (NED 북, 동)
-#   marker_a          5   3                    →  [ 3.0,  5.0]
-#   pillar_east       8  -4                    →  [-4.0,  8.0]
 #   box_west         -6   0                    →  [ 0.0, -6.0]
+#   pillar_east       8  -4                    →  [-4.0,  8.0]
+#   marker_a          5   3                    →  [ 3.0,  5.0]   ← 마지막 = 착륙 지점
 #
 #   변환 규칙: 북 = ENU의 y,  동 = ENU의 x   (x와 y를 맞바꾼다)
+#   ※ 월드 원점과 PX4 로컬 원점이 같다는 전제 (기본 스폰 위치에서 시작할 때)
 #
 # 실행:
 #   ros2 run drone_ros2_advanced w03_mission_raw --ros-args \
-#     -p waypoint_file:=$(ros2 pkg prefix drone_ros2_advanced)/share/drone_ros2_advanced/config/my_custom_world_mission.yaml
+#     -p waypoint_file:="$(ros2 pkg prefix drone_ros2_advanced)/share/drone_ros2_advanced/config/my_custom_world_mission.yaml"
 # ==============================================================================
-takeoff_altitude: 5.0    # 장애물(최대 4m)보다 높게
+takeoff_altitude: 5.0    # PX4 로컬 z=0 기준 목표 높이 [m] (장애물 최대 4m보다 높게)
+tolerance: 0.5           # 수평 도달 판정 반경 [m]
+
+# hold_sec 은 w03_yaml_raw 용입니다. w03_mission_raw 는 이 값을 읽지 않고,
+# 수평거리가 tolerance 안에 들어오면 곧바로 다음 waypoint 로 넘어갑니다.
 hold_sec: 5.0
-tolerance: 0.5
 
 waypoints:
-  - [3.0, 5.0]     # WP1: 마커 위
-  - [-4.0, 8.0]    # WP2: 원기둥 위
-  - [0.0, -6.0]    # WP3: 박스 위
-  - [0.0, 0.0]     # WP4: 출발점 복귀
+  - [0.0, -6.0]    # WP1: 박스 위    (Gazebo -6  0)
+  - [-4.0, 8.0]    # WP2: 원기둥 위  (Gazebo  8 -4)
+  - [3.0, 5.0]     # WP3: 마커 위    (Gazebo  5  3)  ← 여기서 착륙
