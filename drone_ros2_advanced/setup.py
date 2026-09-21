@@ -47,6 +47,7 @@ setup(
             'w05_camera_viewer = drone_ros2_advanced.week05.camera_viewer:main',
             'w05_contour = drone_ros2_advanced.week05.contour_demo:main',
             'w05_aruco = drone_ros2_advanced.week05.aruco_detector:main',
+            'w05_aruco_hud = drone_ros2_advanced.week05.aruco_detector_hud:main',   # 심화: HUD 판
 
             # ── 6주차: 오차 제어 · 정밀착륙 ──────────────────────
             #    동작 조합: w05_aruco + w06_keyboard_ab + w06_precision_land

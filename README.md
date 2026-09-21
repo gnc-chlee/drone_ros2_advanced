@@ -102,7 +102,7 @@ ros2 run drone_ros2_advanced w03_mission_raw --ros-args   -p waypoint_file:=$(ro
 | 2주차 | PX4-ROS2 연동 / 키보드 제어 노드 실습 | `first_node`, `position_listener`, `keyboard_control` |
 | 3주차 | 단일 Waypoint / 다중 Waypoint 비행 설계 | `w03_takeoff_*`, `w03_multi_*`, `w03_yaml_*`, `w03_mission_*` |
 | 4주차 | Gazebo World 구조와 SDF / 커스텀 World 실습 | `worlds/my_custom_world.sdf` (+ `w03_mission_raw` 재사용) |
-| 5주차 | ROS2 카메라 토픽과 OpenCV / ArUco 마커 인식 | `w05_camera_bridge` + `w05_camera_viewer`, `w05_contour`, `w05_aruco` |
+| 5주차 | ROS2 카메라 토픽과 OpenCV / ArUco 마커 인식 | `w05_camera_bridge` + `w05_camera_viewer`, `w05_contour`, `w05_aruco` (심화: `w05_aruco_hud`) |
 | 6주차 | 마커 기준 오차 계산과 제어 / 정밀착륙 노드 | `w06_center_error` / 정밀착륙 조합: `w05_aruco` + `w06_keyboard_ab` + `w06_precision_land` |
 | 7주차 | **중간고사** | - |
 | 8주차 | OpenCV DNN 기반 객체 인식 / 사람 인식 노드 | `w08_face_detector` (DNN판 추가 예정) |
@@ -140,8 +140,11 @@ MicroXRCEAgent udp4 -p 8888
 ros2 run drone_ros2_advanced w05_camera_bridge
 
 # 터미널 4: 실습 노드
-ros2 run drone_ros2_advanced w05_camera_viewer
+ros2 run drone_ros2_advanced w05_camera_viewer    # 1강: 카메라 보기
+ros2 run drone_ros2_advanced w05_aruco            # 2강: 마커 찾기 → /sjcu/error 발행
 ```
+- `w05_aruco` 는 검출 코어만 담은 수업용 최소판. HUD(위치 패널·게이지)가 붙은 심화판은 `w05_aruco_hud`
+- 오차 확인: `ros2 topic echo /sjcu/error` — 마커를 찾은 프레임에서만 `[x, y, size]` 픽셀이 흐릅니다
 - 확인: `ros2 topic hz /camera/image_raw` 에 수치가 찍히면 성공. `rqt_image_view` 로 화면도 볼 수 있음
 - 월드/기체가 다르면 브리지에 인자: `w05_camera_bridge --world default --model x500_depth_0 --sensor IMX214`
 - 6주차 접근 실습(마커에서 떨어져 시작): `PX4_GZ_MODEL_POSE="2,1,0,0,0,0" PX4_GZ_WORLD=aruco make px4_sitl gz_x500_mono_cam_down`
