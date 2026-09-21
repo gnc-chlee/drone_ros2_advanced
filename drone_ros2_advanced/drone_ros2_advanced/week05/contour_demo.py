@@ -26,6 +26,10 @@
 #     VM 메뉴 ▸ Removable Devices ▸ (노트북 카메라) ▸ Connect 로 웹캠을 VM에 연결한 뒤
 #     `ls /dev/video*` 로 확인 (/dev/video0 이 보이면 CAMERA_INDEX = 0)
 #
+#   VM에서 프레임이 뚝뚝 끊기고 `VIDEOIO(V4L2:/dev/video0): select() timeout` 이 뜨면:
+#     VMware USB 패스스루 대역폭 부족. 이 코드는 압축(MJPG)+640x480 을 요청해 부담을 줄인다.
+#     그래도 느리면 VM 설정 ▸ USB Controller ▸ USB compatibility 를 3.1(또는 2.0)로 바꿔 볼 것
+#
 #   밝은 방 함정:
 #     배경이 밝으면 화면 전체가 가장 큰 contour로 잡힘
 #     → THRESHOLD를 올리거나 어두운 배경 사용
@@ -42,21 +46,35 @@ CAMERA_INDEX = 0     # 웹캠 번호 (안 되면 1, 2로 바꿔보세요)
 THRESHOLD    = 127   # 이진화 기준 밝기 (0~255) — 바꿔가며 실험!
                      # 배경이 밝으면 화면 전체가 가장 큰 contour로 잡힘 → THRESHOLD를 올리거나 어두운 배경 사용
 MIN_AREA     = 500   # 이 면적(픽셀)보다 작은 것은 노이즈로 무시
+FRAME_W, FRAME_H = 640, 480   # VM USB 패스스루를 고려한 안전한 해상도
 
 
 def main():
-    cap = cv2.VideoCapture(CAMERA_INDEX)
+    cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_V4L2)
     if not cap.isOpened():
         print(f'웹캠 {CAMERA_INDEX}번을 열 수 없습니다!')
         return
 
+    # ── [복붙 영역] VM 웹캠 대응: 압축 포맷 + 낮은 해상도로 USB 부담 1/10 ──
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  FRAME_W)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)          # 묵은 프레임 쌓이지 않게
+    print(f'웹캠 설정: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}')
+
     print('contour 데모 시작! (q: 종료)')
     print(f'이진화 기준: {THRESHOLD} — 코드에서 바꿔가며 실험해보세요')
 
+    fail = 0
     while True:
         ret, frame = cap.read()
         if not ret:
-            break
+            fail += 1
+            if fail >= 30:               # 연속 30번 실패 = 카메라 죽음
+                print('웹캠에서 프레임이 오지 않습니다 (USB 연결/대역폭 확인)')
+                break
+            continue
+        fail = 0
 
         # ── 1. 그레이스케일 변환 ─────────────────────────────────
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
