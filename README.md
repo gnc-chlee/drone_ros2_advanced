@@ -35,43 +35,30 @@ pip install ultralytics
 
 ## 매주 실습 전에 — 최신 코드 받기
 
-주차마다 코드와 자료가 추가되므로, **각 주차 실습을 시작하기 전에 한 번** 받아 주세요.
+주차마다 코드와 자료가 추가됩니다. **각 주차 실습을 시작하기 전에 아래 두 줄을 그대로 실행**하세요.
 
 ```bash
-cd ~/ros2_ws/src/drone_ros2_advanced && git pull
+cd ~/ros2_ws/src/drone_ros2_advanced && git fetch origin && git reset --hard origin/main
 cd ~/ros2_ws && colcon build --packages-select drone_ros2_advanced && source install/setup.bash
 ```
 
-빌드까지 해야 새로 추가된 노드를 `ros2 run` 으로 실행할 수 있습니다.
+- 첫 줄: 내 컴퓨터의 저장소를 **GitHub와 똑같이** 맞춥니다. 실습하면서 제공 파일을 고쳤어도 상관없이 **항상 성공**합니다
+- 둘째 줄: 새로 추가된 노드를 `ros2 run` 으로 실행할 수 있게 빌드합니다 (빌드를 빼먹으면 "No executable found")
+- 확인: `ros2 pkg executables drone_ros2_advanced` 에 이번 주 노드 이름이 보이면 끝
 
-### `git pull` 이 거부될 때
+### 이 명령이 하는 일 / 안 하는 일
 
-실습하면서 파일을 고쳤다면 이런 메시지가 나옵니다.
+| | 결과 |
+|---|---|
+| 제공된 파일(`waypoints.yaml`, `keyboard_control.py` 등)을 내가 고친 것 | **원래대로 돌아감** (실험은 다시 하면 됨) |
+| 내가 **새로 만든** 파일(`my_node.py`, `my_mission.yaml`, 내 월드 등) | **그대로 남음** |
+| `setup.py` 에 내가 추가한 줄(2주차 `my_node` 등록) | 원래대로 돌아감 — 필요하면 한 줄 다시 추가 |
 
-```
-error: Your local changes to the following files would be overwritten by merge
-```
-
-둘 중 하나를 고르세요.
-
-```bash
-# (1) 내가 고친 내용을 살리고 싶다
-git stash        # 내 수정 임시 보관
-git pull
-git stash pop    # 다시 꺼내기
-```
-
-```bash
-# (2) 내가 고친 내용은 실험용이라 버려도 된다 (가장 간단)
-git checkout -- .
-git pull
-```
-
-> 내가 **새로 만든 파일**(예: `week02/my_node.py`, `config/my_mission.yaml`)은 어느 쪽이든 지워지지 않습니다.
+> 고친 내용을 남겨두고 싶으면 첫 줄 실행 **전에** `git diff > ~/내수정_$(date +%m%d).patch` 로 백업해 두세요. 나중에 `cat` 으로 열어볼 수 있습니다.
 
 ### 충돌을 아예 피하는 습관
 
-제공된 파일을 직접 고치는 대신 **내 파일을 새로 만들어** 쓰면 `git pull` 과 절대 부딪히지 않습니다.
+제공된 파일을 직접 고치는 대신 **내 파일을 새로 만들어** 쓰면 위 명령에도 사라지지 않습니다.
 
 ```bash
 # waypoints.yaml 을 고치지 말고, 복사해서 내 미션을 만든다
@@ -80,7 +67,7 @@ cp config/waypoints.yaml config/my_mission.yaml
 
 ```bash
 # 실행할 때 내 파일을 지정 (config/*.yaml 은 빌드하면 자동 설치됨)
-ros2 run drone_ros2_advanced w03_mission_raw --ros-args   -p waypoint_file:=$(ros2 pkg prefix drone_ros2_advanced)/share/drone_ros2_advanced/config/my_mission.yaml
+ros2 run drone_ros2_advanced w03_mission_raw --ros-args -p waypoint_file:=$(ros2 pkg prefix drone_ros2_advanced)/share/drone_ros2_advanced/config/my_mission.yaml
 ```
 
 ## 실습 코드는 두 가지 버전!
