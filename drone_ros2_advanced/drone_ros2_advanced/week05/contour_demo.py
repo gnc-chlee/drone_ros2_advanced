@@ -22,13 +22,17 @@
 #     ros2 run drone_ros2_advanced w05_contour
 #     (웹캠 필요. 어두운 배경에 밝은 물체를 비춰보세요)
 #
+#   ROS 가 없는 순수 OpenCV 라 **윈도우/맥에서도 그대로 실행**됩니다 (VM 웹캠 문제 회피용):
+#     pip install opencv-python  →  python contour_demo.py
+#
 #   웹캠 연결 (VMware):
 #     VM 메뉴 ▸ Removable Devices ▸ (노트북 카메라) ▸ Connect 로 웹캠을 VM에 연결한 뒤
 #     `ls /dev/video*` 로 확인 (/dev/video0 이 보이면 CAMERA_INDEX = 0)
 #
 #   VM에서 프레임이 뚝뚝 끊기고 `VIDEOIO(V4L2:/dev/video0): select() timeout` 이 뜨면:
 #     VMware USB 패스스루 대역폭 부족. 이 코드는 압축(MJPG)+640x480 을 요청해 부담을 줄인다.
-#     그래도 느리면 VM 설정 ▸ USB Controller ▸ USB compatibility 를 3.1(또는 2.0)로 바꿔 볼 것
+#     화면 아래가 찢어지면(프레임 일부가 밀려 보임) 같은 원인 — FRAME_FPS 를 10 으로 더 낮추거나
+#     VM 설정 ▸ USB Controller ▸ USB compatibility 를 3.1(또는 2.0)로 바꿔 볼 것. 안 되면 호스트 OS 에서 실행
 #
 #   밝은 방 함정:
 #     배경이 밝으면 화면 전체가 가장 큰 contour로 잡힘
@@ -40,17 +44,19 @@
 # License : MIT
 # ==============================================================================
 
-import cv2
+import cv2, sys
 
 CAMERA_INDEX = 0     # 웹캠 번호 (안 되면 1, 2로 바꿔보세요)
 THRESHOLD    = 127   # 이진화 기준 밝기 (0~255) — 바꿔가며 실험!
                      # 배경이 밝으면 화면 전체가 가장 큰 contour로 잡힘 → THRESHOLD를 올리거나 어두운 배경 사용
 MIN_AREA     = 500   # 이 면적(픽셀)보다 작은 것은 노이즈로 무시
 FRAME_W, FRAME_H = 640, 480   # VM USB 패스스루를 고려한 안전한 해상도
+FRAME_FPS        = 15         # 낮출수록 프레임당 전송 여유가 생겨 찢어짐이 줄어듦
 
 
 def main():
-    cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_V4L2)
+    backend = cv2.CAP_V4L2 if sys.platform.startswith('linux') else cv2.CAP_ANY   # 리눅스만 V4L2
+    cap = cv2.VideoCapture(CAMERA_INDEX, backend)
     if not cap.isOpened():
         print(f'웹캠 {CAMERA_INDEX}번을 열 수 없습니다!')
         return
@@ -59,8 +65,9 @@ def main():
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  FRAME_W)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
+    cap.set(cv2.CAP_PROP_FPS, FRAME_FPS)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)          # 묵은 프레임 쌓이지 않게
-    print(f'웹캠 설정: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}')
+    print(f'웹캠 설정: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))} @ {cap.get(cv2.CAP_PROP_FPS):.0f}fps')
 
     print('contour 데모 시작! (q: 종료)')
     print(f'이진화 기준: {THRESHOLD} — 코드에서 바꿔가며 실험해보세요')
