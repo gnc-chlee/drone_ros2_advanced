@@ -33,7 +33,7 @@
 #       ※ 마커 미검출 프레임에서는 발행하지 않음
 #
 #   실행 방법 (터미널 4개):
-#     터미널 1: cd ~/PX4-Autopilot && PX4_GZ_WORLD=aruco make px4_sitl gz_x500_mono_cam_down
+#     터미널 1: cd ~/PX4-Autopilot && PX4_GZ_WORLD=my_custom_world make px4_sitl gz_x500_mono_cam_down   # (또는 aruco)
 #     터미널 2: MicroXRCEAgent udp4 -p 8888
 #     터미널 3: ros2 run drone_ros2_advanced w05_camera_bridge     # Gazebo 카메라 → /camera/image_raw
 #     터미널 4: ros2 run drone_ros2_advanced w05_aruco_hud

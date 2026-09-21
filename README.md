@@ -117,8 +117,9 @@ ros2 run drone_ros2_advanced position_listener
 ## 5~6주차 카메라 실습 실행 순서
 Gazebo 카메라 이미지는 uXRCE-DDS Agent로 넘어오지 않습니다 — **ros_gz_bridge라는 두 번째 다리**가 필요합니다.
 ```bash
-# 터미널 1: 하방 카메라 기체 + ArUco 마커 월드 (PX4 내장). VM이면 HEADLESS=1 을 앞에 붙여 GUI 부하를 줄일 수 있음
-cd ~/PX4-Autopilot && PX4_GZ_WORLD=aruco make px4_sitl gz_x500_mono_cam_down
+# 터미널 1: 하방 카메라 기체 + 4주차 내 월드 (마커는 동쪽 5m·북쪽 3m). VM이면 HEADLESS=1 을 앞에 붙여 GUI 부하를 줄일 수 있음
+cd ~/PX4-Autopilot && PX4_GZ_WORLD=my_custom_world make px4_sitl gz_x500_mono_cam_down
+#   (Fuel 모델을 못 받았거나 마커를 원점에서 바로 보고 싶으면: PX4_GZ_WORLD=aruco)
 
 # 터미널 2: uXRCE-DDS Agent
 MicroXRCEAgent udp4 -p 8888
@@ -133,8 +134,8 @@ ros2 run drone_ros2_advanced w05_aruco            # 2강: 마커 찾기 → /sjc
 - `w05_aruco` 는 검출 코어만 담은 수업용 최소판. HUD(위치 패널·게이지)가 붙은 심화판은 `w05_aruco_hud`
 - 오차 확인: `ros2 topic echo /sjcu/error` — 마커를 찾은 프레임에서만 `[x, y, size]` 픽셀이 흐릅니다
 - 확인: `ros2 topic hz /camera/image_raw` 에 수치가 찍히면 성공. `rqt_image_view` 로 화면도 볼 수 있음
-- 월드/기체가 다르면 브리지에 인자: `w05_camera_bridge --world default --model x500_depth_0 --sensor IMX214`
-- 6주차 접근 실습(마커에서 떨어져 시작): `PX4_GZ_MODEL_POSE="2,1,0,0,0,0" PX4_GZ_WORLD=aruco make px4_sitl gz_x500_mono_cam_down`
+- 브리지는 Gazebo의 카메라를 **자동 감지**합니다 (월드가 `my_custom_world` 든 `aruco` 든 그대로). 카메라가 여러 개면 `--world`/`--model`/`--sensor` 로 지정
+- 마커 위에서 바로 시작하려면 (10강 지름길): `PX4_GZ_MODEL_POSE="5,3,0,0,0,0" PX4_GZ_WORLD=my_custom_world make px4_sitl gz_x500_mono_cam_down` (좌표는 Gazebo ENU)
 - VM에서 카메라가 너무 느리면 `~/PX4-Autopilot/Tools/simulation/gz/models/mono_cam/model.sdf` 의 해상도를 640x480, update_rate 를 15 로 낮춰 보세요
 
 ## 4주차 커스텀 World
