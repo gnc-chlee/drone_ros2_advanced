@@ -26,8 +26,11 @@ source install/setup.bash
 ```bash
 # 5주차~ 비전 실습: Gazebo 카메라 → ROS2 브리지 (Humble + Harmonic 조합용) + 이미지 확인 도구
 sudo apt install ros-humble-ros-gzharmonic ros-humble-rqt-image-view
-# 5주차~ OpenCV (ArUco 포함 — 4.7 이상 필요)
-pip install 'opencv-python>=4.7'
+# 5주차~ OpenCV — 반드시 4.7 이상 (시스템에 딸려온 4.5.4 에는 aruco.ArucoDetector 가 없음).
+#          numpy 는 1.x 로 고정 (Humble 이 numpy 1 기준이라 2.x 로 올라가면 일부 패키지가 깨질 수 있음)
+pip install 'opencv-python>=4.7' 'numpy<2'
+# 설치 확인 — 버전이 4.7 이상으로 찍히고 에러가 없으면 OK
+python3 -c "import cv2; print(cv2.__version__); cv2.aruco.ArucoDetector"
 # 14주차 YOLO
 pip install ultralytics
 ```
