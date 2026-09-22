@@ -56,6 +56,10 @@ class CameraViewer(Node):
         self.subscription = self.create_subscription(
             Image, self.image_topic, self.image_callback, 10)
 
+        # ── 창 준비: WINDOW_NORMAL 로 만들면 마우스로 크기 조절 가능 (imshow 만 쓰면 고정) ──
+        cv2.namedWindow('Camera Viewer (q: quit)', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Camera Viewer (q: quit)', 640, 480)   # 처음엔 절반 크기로
+
         self.frame_count = 0
         self.get_logger().info(
             f'카메라 뷰어 시작!\n  구독 토픽: {self.image_topic}\n'

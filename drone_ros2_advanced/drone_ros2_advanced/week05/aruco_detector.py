@@ -92,6 +92,11 @@ class ArucoDetector(Node):
         # ── 발행 1개: 오차 ───────────────────────────────────────
         self.error_pub = self.create_publisher(Float32MultiArray, '/sjcu/error', 10)
 
+        # ── 창 준비: WINDOW_NORMAL 로 만들면 마우스로 크기 조절 가능 (imshow 만 쓰면 고정) ──
+        if self.display:
+            cv2.namedWindow('ArUco Detector (q: quit)', cv2.WINDOW_NORMAL)
+            cv2.resizeWindow('ArUco Detector (q: quit)', 640, 480)   # 처음엔 절반 크기로
+
         self.frame_count = 0
         self.get_logger().info(
             f'ArUco 감지 시작!\n'
