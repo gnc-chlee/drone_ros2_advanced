@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : contour_demo.py  (5주차 1강)
+# File    : contour_demo.py  (5주차 참고용 — 수업에서는 다루지 않음)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-07-07
 # Version : 1.0.0
@@ -8,6 +8,9 @@
 # Description:
 #   기초 과목 OpenCV contour 복습 - 웹캠으로 물체 윤곽선 찾기
 #   (ROS2 없이 실행되는 순수 OpenCV 스크립트)
+#
+#   ※ 5주차 수업은 마커 검출(aruco_detector)로 바로 가므로 이 파일은 선택 참고입니다.
+#      "이진화 → 윤곽선 → 중심점" 이 검출기 안에서 어떻게 일어나는지 궁금할 때 열어보세요.
 #
 #   처리 과정 (모든 비전 파이프라인의 기본!):
 #     원본 → 그레이스케일 → 블러 → 이진화 → findContours → 가장 큰 것 선택
