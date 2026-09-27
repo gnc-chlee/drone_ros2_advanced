@@ -340,10 +340,10 @@ class PX4Base(Node):
     #     '/fmu/out/vehicle_odometry',
     #     self.odom_callback, PX4_QOS)
     #
-    # from px4_msgs.msg import SensorGps
+    # from px4_msgs.msg import SensorGps       # 토픽 이름과 타입 이름이 다르다 (v1.16)
     # self.gps_sub = self.create_subscription(
     #     SensorGps,
-    #     '/fmu/out/sensor_gps',
+    #     '/fmu/out/vehicle_gps_position',
     #     self.gps_callback, PX4_QOS)
     #
     # from px4_msgs.msg import AirspeedValidated
