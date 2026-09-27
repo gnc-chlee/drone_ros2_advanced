@@ -50,7 +50,7 @@ setup(
             'w05_aruco_hud = drone_ros2_advanced.week05.aruco_detector_hud:main',   # 심화: HUD 판
 
             # ── 6주차: 오차 제어 · 정밀착륙 (PX4Base) ────────────
-            #    수업용: w05_aruco + w06_align (1강) / w05_aruco + w06_land (2강)
+            #    수업용: w05_aruco + w06_align (2강 1부) / w05_aruco + w06_land (2강)
             'w06_align = drone_ros2_advanced.week06.marker_align_base:main',
             'w06_land = drone_ros2_advanced.week06.precision_land_base:main',
             #    참고용(12주차 모드 전환 소재): w05_aruco + w06_keyboard_ab + w06_precision_land

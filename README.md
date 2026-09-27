@@ -8,7 +8,7 @@
 | OS | Ubuntu 22.04 |
 | ROS2 | Humble |
 | PX4 | v1.16.0 |
-| px4_msgs | v1.16.0 (PX4와 동일 태그) |
+| px4_msgs | `release/1.16` 브랜치 (PX4 v1.16.0 과 짝) — [확인·전환 방법](#6주차-시작-전에-한-번만--px4_msgs-버전-맞추기) |
 | Gazebo | Harmonic |
 | QGroundControl | v4.4.5 (v5는 Ubuntu 22.04 미지원) |
 | 통신 브리지 | uXRCE-DDS |
@@ -35,6 +35,26 @@ python3 -c "import cv2; print(cv2.__version__); cv2.aruco.ArucoDetector"
 pip install ultralytics
 ```
 ※ Fortress용 `ros-humble-ros-gz*`가 이미 설치돼 있으면 충돌하므로 먼저 제거: `apt list --installed | grep ros-humble-ros-gz`
+
+## 6주차 시작 전에 한 번만 — px4_msgs 버전 맞추기
+
+PX4 는 v1.16.0 인데 px4_msgs 를 브랜치 지정 없이 받았다면 최신판(main)이 설치돼 있습니다. 이 경우 드론의 상태 메시지(`VehicleStatus`) 형식이 PX4 와 달라서, 6주차부터 쓰는 PX4Base 노드가 **이륙만 하고 "Offboard 모드 전환 / Arm 명령 전송"을 1초마다 반복**하며 다음 단계로 넘어가지 않습니다.
+
+```bash
+# 1) 확인 — "MESSAGE_VERSION = 1" 이면 이미 맞음 (아래는 건너뜀)
+ros2 interface show px4_msgs/msg/VehicleStatus | grep MESSAGE_VERSION
+```
+
+```bash
+# 2) = 1 이 아니면(다른 숫자·빈 출력) PX4 v1.16 짝으로 전환 후 다시 빌드 (몇 분 걸림)
+cd ~/ros2_ws/src/px4_msgs && git fetch origin && git checkout release/1.16
+cd ~/ros2_ws && colcon build --packages-select px4_msgs && source install/setup.bash
+```
+
+- 다시 확인해서 `= 1` 이면 끝입니다. 이미 열어 둔 터미널에는 `source ~/ros2_ws/install/setup.bash` 를 다시 하세요
+- 확인 명령에서 `Unknown package` 오류가 나면 먼저 `source ~/ros2_ws/install/setup.bash`
+- 처음부터 새로 설치한다면: `cd ~/ros2_ws/src && git clone -b release/1.16 https://github.com/PX4/px4_msgs.git` 후 위 2) 의 둘째 줄로 빌드
+- 2~5주차는 상태 메시지를 읽지 않았고, 쓰던 위치·자세·명령 메시지는 두 버전의 형식이 같아서 영향이 없었습니다
 
 ## 매주 실습 전에 — 최신 코드 받기
 
