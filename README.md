@@ -93,7 +93,7 @@ ros2 run drone_ros2_advanced w03_mission_raw --ros-args -p waypoint_file:=$(ros2
 | 3주차 | 단일 Waypoint / 다중 Waypoint 비행 설계 | `w03_takeoff_*`, `w03_multi_*`, `w03_yaml_*`, `w03_mission_*` |
 | 4주차 | Gazebo World 구조와 SDF / 커스텀 World 실습 | `worlds/my_custom_world.sdf` (+ `w03_mission_raw` 재사용) |
 | 5주차 | ROS2 카메라 토픽과 OpenCV / ArUco 마커 인식 | `w05_camera_bridge` + `w05_camera_viewer`, `w05_aruco` (심화: `w05_aruco_hud` / 참고: `w05_contour` 웹캠 윤곽선) |
-| 6주차 | 마커 기준 오차 계산과 제어 / 정밀착륙 노드 | `w06_center_error` / 정밀착륙 조합: `w05_aruco` + `w06_keyboard_ab` + `w06_precision_land` |
+| 6주차 | 마커 기준 오차 계산과 제어 / 정밀착륙 노드 | `w06_align` (마커 위 정렬) / `w06_land` (정밀착륙) — **PX4Base 첫 사용** (참고: 키보드 조합 `w06_keyboard_ab` + `w06_precision_land` 는 12주차 소재) |
 | 7주차 | **중간고사** | - |
 | 8주차 | OpenCV DNN 기반 객체 인식 / 사람 인식 노드 | `w08_face_detector` (DNN판 추가 예정) |
 | 9주차 | 사람 인식·추종 비행 제어 설계 / 추종 비행 실습 | `w09_face_command`, `w09_p_control`, `w09_follow_*` |
@@ -135,6 +135,13 @@ ros2 run drone_ros2_advanced w05_camera_viewer    # 1강: 카메라 보기
 ros2 run drone_ros2_advanced w05_aruco            # 2강: 마커 찾기 → /sjcu/error 발행
 ```
 - `w05_aruco` 는 검출 코어만 담은 수업용 최소판. HUD(위치 패널·게이지)가 붙은 심화판은 `w05_aruco_hud`
+- **6주차**: 위 4개(PX4·Agent·브리지·`w05_aruco`)를 켠 채 터미널 5에서
+  ```bash
+  ros2 run drone_ros2_advanced w06_align     # 1강: 마커 근처로 날아가 카메라로 정렬·호버
+  ros2 run drone_ros2_advanced w06_land      # 2강: 정렬 → 하강 → 1m 에서 PX4 착륙
+  ros2 run drone_ros2_advanced w06_land --ros-args -p kp:=3.0          # 게인 바꿔보기
+  ros2 run drone_ros2_advanced w06_align --ros-args -p marker_n:=0.0 -p marker_e:=0.0   # aruco 월드(마커 원점)
+  ```
 - 오차 확인: `ros2 topic echo /sjcu/error` — 마커를 찾은 프레임에서만 `[x, y, size]` 픽셀이 흐릅니다
 - 확인: `ros2 topic hz /camera/image_raw` 에 수치가 찍히면 성공. `rqt_image_view` 로 화면도 볼 수 있음
 - 브리지는 Gazebo의 카메라를 **자동 감지**합니다 (월드가 `my_custom_world` 든 `aruco` 든 그대로). 카메라가 여러 개면 `--world`/`--model`/`--sensor` 로 지정

@@ -85,9 +85,9 @@ class ArucoDetector(Node):
         self.aruco_params = aruco.DetectorParameters()
         self.detector     = aruco.ArucoDetector(self.aruco_dict, self.aruco_params)
 
-        # ── 구독 1개: 카메라 (PX4 토픽이 아니라서 PX4_QOS 불필요 — 기본 QoS 10) ──
+        # ── 구독 1개: 카메라 (PX4 토픽 아님 — 최신 1장만 보관: 처리가 밀려도 지연이 안 쌓임) ──
         self.image_sub = self.create_subscription(
-            Image, self.image_topic, self._image_callback, 10)
+            Image, self.image_topic, self._image_callback, 1)
 
         # ── 발행 1개: 오차 ───────────────────────────────────────
         self.error_pub = self.create_publisher(Float32MultiArray, '/sjcu/error', 10)
