@@ -177,8 +177,9 @@ class PrecisionLandBase(PX4Base):
         vx_body = clamp(-self.kp * ey, MAX_SPEED)   # 앞(+) / 뒤(-)
         vy_body = clamp(+self.kp * ex, MAX_SPEED)   # 오른쪽(+) / 왼쪽(-)
 
-        # ② 하강 속도 조절 (새로): 정렬이 흐트러질수록 천천히, STOP_ERR 이상이면 0
-        vz = descend_speed * max(0.0, 1.0 - err / STOP_ERR)
+        # ② 하강 속도 조절 (새로): 하강 속도 = 최대 속도 × 정렬이 확실한 정도
+        confidence = max(0.0, 1.0 - err / STOP_ERR)   # 확실한 정도: 1 = 완벽, 0 = 오차가 STOP_ERR 이상(멈춤)
+        vz = descend_speed * confidence               # DESCEND 에서: 오차 0 → 0.3, 0.05 → 0.15, 0.10 이상 → 0 m/s
 
         # PX4Base: 몸 기준 속도를 드론이 보는 방향(yaw)만큼 돌려 NED 로 보냄
         self.send_velocity_body(vx_body, vy_body, vz)
