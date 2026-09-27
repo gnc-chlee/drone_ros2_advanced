@@ -175,7 +175,7 @@ gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construc
 
 ## 참고
 
-- 월드를 바꿔 실행할 때는 **기존 PX4·Gazebo를 먼저 종료**하세요. Gazebo 서버가 떠 있으면 `PX4_GZ_WORLD` 가 무시되고 이전 월드가 재사용됩니다 (로그에 `gazebo already running world:`)
+- 월드를 바꿔 실행할 때는 **기존 PX4·Gazebo를 먼저 종료**하세요. Gazebo 서버가 떠 있으면 `PX4_GZ_WORLD` 가 무시되고 이전 월드가 재사용됩니다 (로그에 `gazebo already running world:`). Gazebo 창을 닫아도 서버는 남을 수 있으니 `pkill -9 -f "gz sim"` 으로 끄고, `pgrep -af "gz sim"` 이 빈 줄인지 확인한 뒤 다시 실행하세요
 - `Tools/simulation/gz` 는 git 서브모듈이라 여기에 파일을 넣으면 PX4 저장소가 변경된 것으로 표시됩니다. 실습에는 문제없습니다.
 - PX4 v1.16 기본 제공 월드: `aruco`, `baylands`, `default`, `forest`, `frictionless`, `lawn`, `moving_platform`, `rover`, `walls`, `windy`
 - 장애물이 더 필요하면 `walls` 월드를 참고하세요 (박스 4개가 인라인 `<model>` 로 정의돼 있음).

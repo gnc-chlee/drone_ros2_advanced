@@ -211,5 +211,6 @@ drone_ros2_advanced/
 - 트러블슈팅: Gazebo 화면이 검게 나오면 `export LIBGL_ALWAYS_SOFTWARE=1` (VM 환경)
 - 트러블슈팅: `import cv2` 에서 `A module that was compiled using NumPy 1.x cannot be run in NumPy 2.x` / `numpy.core.multiarray failed to import` → numpy 가 2.x 로 올라간 것. `pip install 'opencv-python>=4.7' 'numpy<2'` 로 1.x 로 내리면 해결 (실측 확인)
 - 트러블슈팅: `/camera/image_raw` 가 안 보이면 → 터미널 3의 `w05_camera_bridge` 실행 여부, `gz topic -l | grep image` 로 Gazebo 쪽 토픽 확인
+- 트러블슈팅: PX4 로그에 `gazebo already running world: …` 가 뜨고 Gazebo 창이 안 열리면 → 이전 Gazebo **서버**가 뒤에 남아 있는 것 (이때는 `PX4_GZ_WORLD` 를 바꿔도 이전 월드가 재사용됨). PX4 를 Ctrl+C 로 끈 뒤 `pkill -9 -f "gz sim"` → `pgrep -af "gz sim"` 이 아무것도 안 나오면 다시 실행. PX4 도 남았으면 `pkill -9 -f px4`. (`HEADLESS=1` 을 켜 둔 터미널이면 원래 창이 안 뜸 → `unset HEADLESS`)
 - 비전 실습(5주차~)은 카메라 렌더링 부담이 큼 — VM에서는 `HEADLESS=1` + 해상도 축소 권장, GPU가 있는 네이티브 Ubuntu면 더 원활
 - YOLOv8n은 CPU 환경에서도 동작 가능 (저사양 PC 대응)
