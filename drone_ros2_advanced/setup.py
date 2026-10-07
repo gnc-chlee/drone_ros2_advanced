@@ -7,6 +7,8 @@ setup(
     name=package_name,
     version='2.0.0',
     packages=find_packages(exclude=['test']),
+    # 8주차 DNN 모델·예시 사진 — 노드가 자기 파일 옆(models/, samples/)에서 찾는다
+    package_data={'drone_ros2_advanced.week08': ['models/*', 'samples/*']},
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -15,7 +17,7 @@ setup(
         ('share/' + package_name + '/worlds', glob('worlds/*.sdf')),    # 4주차 커스텀 World
     ],
     install_requires=['setuptools'],
-    zip_safe=True,
+    zip_safe=False,   # 8주차 노드가 자기 파일 옆 models/ 를 읽으므로 압축 설치 금지
     maintainer='Choonghyun Lee',
     maintainer_email='chungh6577@gmail.com',
     description='로봇운영체제(ROS2)응용 주차별 실습 패키지',
@@ -60,7 +62,8 @@ setup(
             'w06_keyboard_ab = drone_ros2_advanced.week06.keyboard_control_ab:main',
             'w06_precision_land = drone_ros2_advanced.week06.precision_land_ab:main',
 
-            # ── 8주차: 객체 인식 (Haar 원형, DNN판 추가 예정) ────
+            # ── 8주차: 객체 인식 (13강 DNN 데모 / Haar 원형은 참고용) ──
+            'w08_dnn_demo = drone_ros2_advanced.week08.dnn_demo:main',
             'w08_face_detector = drone_ros2_advanced.week08.face_detector:main',
 
             # ── 9주차: 사람 추종 비행 ────────────────────────────

@@ -115,7 +115,7 @@ ros2 run drone_ros2_advanced w03_mission_raw --ros-args -p waypoint_file:=$(ros2
 | 5주차 | ROS2 카메라 토픽과 OpenCV / ArUco 마커 인식 | `w05_camera_bridge` + `w05_camera_viewer`, `w05_aruco` (심화: `w05_aruco_hud` / 참고: `w05_contour` 웹캠 윤곽선) |
 | 6주차 | 마커 기준 오차 계산과 제어 / 정밀착륙 노드 | `w06_align` (마커 위 정렬) / `w06_land` (정밀착륙) — **PX4Base 첫 사용** (참고: 키보드 조합 `w06_keyboard_ab` + `w06_precision_land` 는 12주차 소재) |
 | 7주차 | **중간고사** | - |
-| 8주차 | OpenCV DNN 기반 객체 인식 / 사람 인식 노드 | `w08_face_detector` (DNN판 추가 예정) |
+| 8주차 | OpenCV DNN 기반 객체 인식 / 사람 인식 노드 | `w08_dnn_demo` (13강: 사진·웹캠으로 DNN 4단계) / 사람 인식 노드 추가 예정 (참고: `w08_face_detector` Haar 원형) |
 | 9주차 | 사람 인식·추종 비행 제어 설계 / 추종 비행 실습 | `w09_face_command`, `w09_p_control`, `w09_follow_*` |
 | 10주차 | 거리 센서 개념 / LiDAR 고도 데이터 활용 | (추가 예정) |
 | 11주차 | 장애물 감지 원리 / 회피 비행 노드 | (추가 예정) |
@@ -168,6 +168,22 @@ ros2 run drone_ros2_advanced w05_aruco            # 2강: 마커 찾기 → /sjc
 - 마커 위에서 바로 시작하려면 (10강 지름길): `PX4_GZ_MODEL_POSE="5,3,0,0,0,0" PX4_GZ_WORLD=my_custom_world make px4_sitl gz_x500_mono_cam_down` (좌표는 Gazebo ENU)
 - VM에서 카메라가 너무 느리면 `~/PX4-Autopilot/Tools/simulation/gz/models/mono_cam/model.sdf` 의 해상도를 640x480, update_rate 를 15 로 낮춰 보세요
 
+## 8주차 OpenCV DNN 데모 (13강)
+Gazebo·드론 없이 사진으로 OpenCV DNN(MobileNet-SSD)의 4단계(읽기 → 전처리 → 추론 → 해석)를 봅니다.
+ROS 통신은 쓰지 않는 OpenCV 프로그램이라 **PX4·Agent·브리지 없이 터미널 1개**면 됩니다.
+```bash
+# 먼저 한 번: OpenCV 가 4.x 인지 확인 (5.x 에는 readNetFromCaffe 가 없음)
+python3 -c "import cv2; print(cv2.__version__); cv2.dnn.readNetFromCaffe"
+#   5.x 가 나오면 → pip install 'opencv-python==4.11.0.86' 'numpy<2'
+
+ros2 run drone_ros2_advanced w08_dnn_demo                          # week08/samples/ 의 예시 사진
+ros2 run drone_ros2_advanced w08_dnn_demo ~/Pictures/my_photo.jpg  # 내 사진 (폴더·영상 파일도 됨)
+ros2 run drone_ros2_advanced w08_dnn_demo cam                      # 웹캠 0번 (1번이면 cam1)
+```
+- 조작: 슬라이더 = 신뢰도 기준값(25~95%) · `n`/스페이스 = 다음 사진 · `t` = 결과 표를 터미널에 출력 · `s` = 화면 저장 · `q` = 종료
+- 모델 파일은 저장소 `week08/models/` 에 들어 있고(MIT, 출처·체크섬은 그 폴더 README), **빌드해야 설치 경로에 복사**됩니다 — 코드 최신화 뒤 `colcon build` 를 꼭 다시 하세요
+- 실습으로 `week08/dnn_demo.py` 를 고친 뒤에도 `colcon build` → `source install/setup.bash` 를 해야 반영됩니다
+
 ## 4주차 커스텀 World
 ```bash
 # 1) PX4 월드 폴더로 복사 (PX4가 월드를 찾는 경로가 고정돼 있음)
@@ -199,7 +215,7 @@ drone_ros2_advanced/
     ├── worlds/                # 4주차 커스텀 Gazebo World (PX4 폴더로 복사해 사용)
     ├── week05/                # 카메라 · OpenCV · ArUco
     ├── week06/                # 오차 제어 · 정밀착륙
-    ├── week08/                # 객체 인식
+    ├── week08/                # 객체 인식 (dnn_demo · models/ MobileNet-SSD · samples/ 예시 사진)
     ├── week09/                # 사람 추종 비행
     ├── week13/                # 추종 안정화 (통합 미션)
     ├── week14/                # 심화 (YOLO)
