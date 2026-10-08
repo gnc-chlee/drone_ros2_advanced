@@ -132,9 +132,9 @@ gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construc
 | SUV | `SUV` | 차 한 대 | 고정 | 텍스처 1024×1024 두 장 — VM에서 1대까지 |
 | 종이상자 | `Cardboard box` | 0.5×0.4×0.3 m | **움직임** | 모델에 z=0.15가 내장돼 있어 `<pose>` z를 0으로 두면 절반이 묻힘 |
 
-**쓰지 말 것**: `Standing person`, `Walking person` — 모델 안의 메쉬 경로가 Fuel 등록명과 달라서
-`<include>` 로는 형상이 로드되지 않습니다. 사람 모델이 꼭 필요하면 `Casual female` 을 쓰되,
-4096×4096 텍스처 때문에 VM에서는 느립니다(8~9주차에 재검토).
+**쓰지 말 것**: `Standing person`, `Walking person` — 4주차 점검 때 `<include>` 로 형상이 로드되지 않았습니다.
+8~9주차의 사람은 이 두 모델이 아니라 **`person_world.sdf` 의 걷는 사람(actor)** 을 씁니다 (아래 "8주차 사람 월드").
+`Casual female` 도 쓸 수는 있지만 첫 다운로드가 27 MB 라 미리 받아야 합니다(실제 텍스처는 2048² 이하 — 4096 은 쓰이지 않는 노멀맵).
 
 ### 라이선스와 출처
 
@@ -161,6 +161,34 @@ gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construc
 - 같은 모델을 여러 개 놓을 때는 `<name>` 을 반드시 다르게 (이름이 겹치면 하나만 나옴)
 - 각 모델은 자기 원점 위치가 달라서, `<pose>` 의 z는 0으로 두고 **뜨거나 묻히면 그때 조정**
 - 캐시를 통째로 배포할 수도 있습니다: `tar czf gz-fuel-cache.tgz -C ~/.gz/fuel fuel.gazebosim.org` → 학생이 `~/.gz/fuel` 에 풀기
+
+## 8주차 사람 월드 (person_world.sdf)
+
+14강(사람 인식 노드)·9주차(추종 비행)용. 땅 + 해(그림자 끔) + 걷는 사람 1명뿐인 가장 단순한 월드입니다.
+
+```bash
+cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+cp person_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+cp -r models/* ~/PX4-Autopilot/Tools/simulation/gz/models/          # 사람 모델 (인터넷 불필요)
+cd ~/PX4-Autopilot && HEADLESS=1 PX4_GZ_WORLD=person_world make px4_sitl gz_x500_mono_cam
+```
+
+- 사람은 Fuel 에서 받지 않고 `models/sjcu_walker/meshes/walk.dae`(chapulina Walking actor, CC0)를 씁니다 → 인터넷·Fuel 다운로드 실패와 무관
+- 사람의 길 (Gazebo ENU, 드론은 원점에서 동쪽을 봄 — 화면에서 북쪽(+y)이 왼쪽):
+
+| 시간(시뮬) | 장면 | 위치 |
+|------|------|------|
+| 0 ~ 11 s | 멀어짐 (뒷모습) | (4, 0) → (8, 0) |
+| 13 ~ 21 s | 8 m 정지 (앞모습) | (8, 0) |
+| 22 ~ 29 s | 북쪽으로 비켜섬 (옆모습) | (8, 0) → (8, 2.5) |
+| 30 ~ 41 s | 다가옴 (앞모습) | (8, 2.5) → (4, 2.5) |
+| 42 ~ 57 s | 4 m 앞을 가로지름 (옆모습) | (4, 2.5) → (4, −2.5) |
+| 58 ~ 65 s | 가운데로 (옆모습) | (4, −2.5) → (4, 0) |
+| 66 ~ 74 s | 4 m 정지 (앞모습) | (4, 0) |
+
+- actor 의 `<pose>` z 는 **1.0** (메시 원점이 허리 높이 — 0 이면 땅에 묻힘, 4주차 종이상자 z 함정과 같은 이야기)
+- 걸은 거리만큼 다리를 움직이므로, 멈춘 동안에는 걷던 자세 그대로 서 있습니다
+- 강사 점검용 `person_check_world.sdf`: 사람이 3·4·5·6·8 m 에서 드론을 보고 10초씩 정지 (거리별 신뢰도 측정). 사진 입간판(`models/sjcu_person_board`, Plan B)도 주석을 풀어 비교
 
 ## 자주 나는 오류
 

@@ -62,8 +62,10 @@ setup(
             'w06_keyboard_ab = drone_ros2_advanced.week06.keyboard_control_ab:main',
             'w06_precision_land = drone_ros2_advanced.week06.precision_land_ab:main',
 
-            # ── 8주차: 객체 인식 (13강 DNN 데모 / Haar 원형은 참고용) ──
+            # ── 8주차: 객체 인식 (13강 DNN 데모 / 14강 사람 인식 노드 / Haar 원형은 참고용) ──
             'w08_dnn_demo = drone_ros2_advanced.week08.dnn_demo:main',
+            'w08_person = drone_ros2_advanced.week08.person_detector:main',
+            'w08_video_pub = drone_ros2_advanced.week08.video_publisher:main',
             'w08_face_detector = drone_ros2_advanced.week08.face_detector:main',
 
             # ── 9주차: 사람 추종 비행 ────────────────────────────

@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ============================================================================
+  person_world.sdf  (8주차 14강 · 9주차 - 사람 1명이 드론 앞을 도는 월드)
+
+  땅 + 해(그림자 끔) + 걷는 사람(actor) 1명만 있는 가장 단순한 월드입니다.
+  드론은 원점에서 머리를 동쪽(+x)으로 두고 뜨므로, 사람은 늘 드론 정면 시야 안에 있습니다.
+  (PX4 v1.16 은 스폰 방향을 바꿀 수 없어 기수가 늘 동쪽입니다)
+
+  사람이 한 바퀴(시뮬레이션 시간 약 76초) 동안 보여 주는 장면 — 14강 관찰표:
+    ① 4 m 앞에서 8초 정지, 드론을 바라봄 (앞모습)        ← 바퀴의 끝
+    ② 4 m → 8 m 로 멀어짐 (뒷모습)                       ← 바퀴의 시작
+    ③ 8 m 에서 돌아서서 8초 정지 (앞모습)
+    ④ 북쪽으로 비켜서 다가오고(앞모습), 4 m 에서 화면을 가로지름 (옆모습)
+    ※ 사람은 걸은 거리만큼 다리를 움직이므로, 멈춘 동안에는 걷던 자세 그대로 서 있습니다.
+
+  ★ 규칙 두 가지 (4주차와 같음) ★
+    - 파일 이름(person_world.sdf) = <world name="person_world">
+    - <world> 바로 아래에 <plugin> 을 쓰지 않는다 (PX4 server.config 자동 적용이 취소됨)
+
+  설치 (한 번만) — 월드 1개 + 사람 모델 폴더를 PX4 로 복사:
+    cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+    cp person_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+    cp -r models/* ~/PX4-Autopilot/Tools/simulation/gz/models/
+
+  실행 (정면 카메라 기체, 비행 없음):
+    cd ~/PX4-Autopilot
+    HEADLESS=1 PX4_GZ_WORLD=person_world make px4_sitl gz_x500_mono_cam
+    (Gazebo 화면을 보고 싶으면 HEADLESS=1 을 빼고 실행)
+
+  좌표 (Gazebo ENU: x 동, y 북, z 위) — 드론 카메라 화면에서는 북쪽(+y)이 왼쪽입니다.
+
+  사람 모델: chapulina "Walking actor" 의 walk.dae (Gazebo Fuel, CC0 1.0)
+             → models/sjcu_walker/meshes/walk.dae 로 함께 넣어 두어 인터넷 없이 뜹니다.
+  ============================================================================
+-->
+<sdf version="1.9">
+  <world name="person_world">
+
+    <!-- ===== 여기부터 ===== PX4 기본 월드에서 그대로 가져온 부분 [복붙 영역]
+         (my_custom_world 와 같고, 그림자 두 곳만 false — VM 렌더링 부담을 줄임) -->
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+    <scene>
+      <grid>false</grid>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>false</shadows>
+    </scene>
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1 1</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 -0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 -0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0 0 0 0 -0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <light name="sunUTC" type="directional">
+      <pose>0 0 500 0 -0 0</pose>
+      <cast_shadows>false</cast_shadows>
+      <intensity>1</intensity>
+      <direction>0.001 0.625 -0.78</direction>
+      <diffuse>0.904 0.904 0.904 1</diffuse>
+      <specular>0.271 0.271 0.271 1</specular>
+      <attenuation>
+        <range>2000</range>
+        <linear>0</linear>
+        <constant>1</constant>
+        <quadratic>0</quadratic>
+      </attenuation>
+      <spot>
+        <inner_angle>0</inner_angle>
+        <outer_angle>0</outer_angle>
+        <falloff>0</falloff>
+      </spot>
+    </light>
+    <!-- ===== 여기까지 ===== [복붙 영역] 끝 -->
+
+    <!-- 시뮬레이션의 GPS 원점 (세종사이버대학교) — my_custom_world 와 같음 -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>37.551187</latitude_deg>
+      <longitude_deg>127.073880</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+
+    <!-- ========================================================
+         걷는 사람 (actor) — 정해 둔 길을 따라 반복해서 걷는 애니메이션 사람
+         - skin      = 사람 모양(메시)    animation = 걷는 동작   (같은 walk.dae 파일)
+         - waypoint  = <time> 초에 <pose> 위치·방향에 있어라
+                       pose: x(동) y(북) z(위) roll pitch yaw, yaw 0 = 동쪽(드론과 같은 방향)을 봄
+                       yaw 3.14159 = 서쪽(드론 쪽)을 봄 → 드론에게 앞모습
+         - z = 1.0 은 필수 — 이 메시의 원점이 허리 높이라 0 으로 두면 땅에 묻힘
+         - 마지막 waypoint = 첫 waypoint 와 같은 자리 → 끊김 없이 반복
+         - 걷는 속도 약 0.37 m/s, 돌아서기 1~1.5초
+         - 돌아서기 앞뒤에 같은 자세를 0.3초씩 한 번 더 적었다 → 서 있거나 곧게 걸을 때 몸이 흔들리지 않음
+         - yaw 는 이웃 waypoint 끼리 ±3.14 를 넘어 건너뛰지 않게 적는다 (남쪽을 -1.5708 이 아니라 4.71239 로)
+           — 건너뛰면 Gazebo 가 먼 쪽으로 돌다 되돌아온다
+         ======================================================== -->
+    <actor name="walker">
+      <skin>
+        <filename>model://sjcu_walker/meshes/walk.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walking">
+        <filename>model://sjcu_walker/meshes/walk.dae</filename>
+        <scale>1.000000</scale>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <delay_start>0.000000</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walking" tension="1">
+          <!-- ② 4 m 에서 출발해 8 m 로 멀어짐 (뒷모습) -->
+          <waypoint><time>0.0</time> <pose>4 0 1.0 0 0 0</pose></waypoint>
+          <waypoint><time>0.3</time> <pose>4 0 1.0 0 0 0</pose></waypoint>
+          <waypoint><time>11.1</time> <pose>8 0 1.0 0 0 0</pose></waypoint>
+          <waypoint><time>11.4</time> <pose>8 0 1.0 0 0 0</pose></waypoint>
+          <!-- ③ 8 m 에서 드론 쪽으로 돌아서서 약 8초 정지 (앞모습) -->
+          <waypoint><time>12.9</time> <pose>8 0 1.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>13.2</time> <pose>8 0 1.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>20.6</time> <pose>8 0 1.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>20.9</time> <pose>8 0 1.0 0 0 3.14159</pose></waypoint>
+          <!-- 북쪽(화면 왼쪽)으로 2.5 m 비켜섬 (옆모습) -->
+          <waypoint><time>21.9</time> <pose>8 0 1.0 0 0 1.5708</pose></waypoint>
+          <waypoint><time>22.2</time> <pose>8 0 1.0 0 0 1.5708</pose></waypoint>
+          <waypoint><time>28.7</time> <pose>8 2.5 1.0 0 0 1.5708</pose></waypoint>
+          <waypoint><time>29.0</time> <pose>8 2.5 1.0 0 0 1.5708</pose></waypoint>
+          <!-- ④ 드론 쪽으로 다가옴 8 m → 4 m (앞모습) -->
+          <waypoint><time>30.0</time> <pose>8 2.5 1.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>30.3</time> <pose>8 2.5 1.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>41.1</time> <pose>4 2.5 1.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>41.4</time> <pose>4 2.5 1.0 0 0 3.14159</pose></waypoint>
+          <!-- ④ 4 m 앞에서 화면을 가로지름: 왼쪽 → 오른쪽 (옆모습, 남쪽 = 4.71239) -->
+          <waypoint><time>42.4</time> <pose>4 2.5 1.0 0 0 4.71239</pose></waypoint>
+          <waypoint><time>42.7</time> <pose>4 2.5 1.0 0 0 4.71239</pose></waypoint>
+          <waypoint><time>56.4</time> <pose>4 -2.5 1.0 0 0 4.71239</pose></waypoint>
+          <waypoint><time>56.7</time> <pose>4 -2.5 1.0 0 0 4.71239</pose></waypoint>
+          <!-- 가운데로 돌아옴 -->
+          <waypoint><time>58.2</time> <pose>4 -2.5 1.0 0 0 1.5708</pose></waypoint>
+          <waypoint><time>58.5</time> <pose>4 -2.5 1.0 0 0 1.5708</pose></waypoint>
+          <waypoint><time>65.0</time> <pose>4 0 1.0 0 0 1.5708</pose></waypoint>
+          <waypoint><time>65.3</time> <pose>4 0 1.0 0 0 1.5708</pose></waypoint>
+          <!-- ① 4 m 에서 드론 쪽으로 돌아서서 약 8초 정지 (앞모습) -->
+          <waypoint><time>66.3</time> <pose>4 0 1.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>66.6</time> <pose>4 0 1.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>74.0</time> <pose>4 0 1.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>74.3</time> <pose>4 0 1.0 0 0 3.14159</pose></waypoint>
+          <!-- 다시 동쪽으로 돌아섬 = 첫 waypoint 와 같은 자세 → 처음부터 반복 -->
+          <waypoint><time>75.8</time> <pose>4 0 1.0 0 0 0</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+  </world>
+</sdf>

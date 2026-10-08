@@ -1,0 +1,32 @@
+<?xml version="1.0" ?>
+<!--
+  sjcu_walker — <include> 로 넣을 때 쓰는 판 (반지름 1 m 원을 18초에 한 바퀴, Fuel 원본과 같은 궤적)
+  수업 월드(person_world.sdf)는 이 파일을 쓰지 않고, 같은 walk.dae 로 궤적을 직접 적었다.
+  include 할 때 <pose> 의 z 는 1.0 (메시 원점이 허리 높이 — 0 이면 땅에 묻힘)
+    <include><uri>model://sjcu_walker</uri><pose>4 0 1.0 0 0 0</pose></include>
+-->
+<sdf version="1.9">
+  <actor name="sjcu_walker">
+    <skin>
+      <filename>model://sjcu_walker/meshes/walk.dae</filename>
+      <scale>1.0</scale>
+    </skin>
+    <animation name="walking">
+      <filename>model://sjcu_walker/meshes/walk.dae</filename>
+      <scale>1.000000</scale>
+      <interpolate_x>true</interpolate_x>
+    </animation>
+    <script>
+      <loop>true</loop>
+      <delay_start>0.000000</delay_start>
+      <auto_start>true</auto_start>
+      <trajectory id="0" type="walking">
+        <waypoint><time>0.0</time>  <pose>0 1 0 0 0 0</pose></waypoint>
+        <waypoint><time>4.5</time>  <pose>1 0 0 0 0 -1.5708</pose></waypoint>
+        <waypoint><time>9.0</time>  <pose>0 -1 0 0 0 -3.14159</pose></waypoint>
+        <waypoint><time>13.5</time> <pose>-1 0 0 0 0 -4.71239</pose></waypoint>
+        <waypoint><time>18.0</time> <pose>0 1 0 0 0 -6.28318</pose></waypoint>
+      </trajectory>
+    </script>
+  </actor>
+</sdf>

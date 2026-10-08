@@ -115,7 +115,7 @@ ros2 run drone_ros2_advanced w03_mission_raw --ros-args -p waypoint_file:=$(ros2
 | 5주차 | ROS2 카메라 토픽과 OpenCV / ArUco 마커 인식 | `w05_camera_bridge` + `w05_camera_viewer`, `w05_aruco` (심화: `w05_aruco_hud` / 참고: `w05_contour` 웹캠 윤곽선) |
 | 6주차 | 마커 기준 오차 계산과 제어 / 정밀착륙 노드 | `w06_align` (마커 위 정렬) / `w06_land` (정밀착륙) — **PX4Base 첫 사용** (참고: 키보드 조합 `w06_keyboard_ab` + `w06_precision_land` 는 12주차 소재) |
 | 7주차 | **중간고사** | - |
-| 8주차 | OpenCV DNN 기반 객체 인식 / 사람 인식 노드 | `w08_dnn_demo` (13강: 사진·웹캠으로 DNN 4단계) / 사람 인식 노드 추가 예정 (참고: `w08_face_detector` Haar 원형) |
+| 8주차 | OpenCV DNN 기반 객체 인식 / 사람 인식 노드 | `w08_dnn_demo` (13강: 사진·웹캠으로 DNN 4단계) / `w08_person` + `w08_video_pub`, `worlds/person_world.sdf` (14강: 영상 → 드론 정면 카메라에서 사람 찾기 → `/sjcu/person_error`) (참고: `w08_face_detector` Haar 원형) |
 | 9주차 | 사람 인식·추종 비행 제어 설계 / 추종 비행 실습 | `w09_face_command`, `w09_p_control`, `w09_follow_*` |
 | 10주차 | 거리 센서 개념 / LiDAR 고도 데이터 활용 | (추가 예정) |
 | 11주차 | 장애물 감지 원리 / 회피 비행 노드 | (추가 예정) |
@@ -184,6 +184,62 @@ ros2 run drone_ros2_advanced w08_dnn_demo cam                      # 웹캠 0번
 - 모델 파일은 저장소 `week08/models/` 에 들어 있고(MIT, 출처·체크섬은 그 폴더 README), **빌드해야 설치 경로에 복사**됩니다 — 코드 최신화 뒤 `colcon build` 를 꼭 다시 하세요
 - 실습으로 `week08/dnn_demo.py` 를 고친 뒤에도 `colcon build` → `source install/setup.bash` 를 해야 반영됩니다
 
+## 8주차 사람 인식 노드 (14강)
+13강의 DNN 4단계를 5주차 `aruco_detector` 틀에 넣은 노드 `w08_person` 이 `/camera/image_raw` 에서 사람을 찾아
+`/sjcu/person_error` = `[x_err, y_err, size_err, box_h, conf]` 를 발행합니다 (앞 3칸은 5주차 `/sjcu/error` 와 같은 약속, **찾았을 때만** 발행).
+노드는 토픽 이름만 알기 때문에 **입력만 바꿔 끼우면** 녹화 영상에서도, 드론 정면 카메라에서도 그대로 동작합니다. 14강은 비행하지 않습니다.
+
+### 0) 준비 (한 번만)
+```bash
+# 사람 월드 + 사람 모델(걷는 사람 walk.dae, 사진 입간판)을 PX4 폴더로 복사
+cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+cp person_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+cp -r models/* ~/PX4-Autopilot/Tools/simulation/gz/models/
+
+# (8주차 표준) 카메라를 640x480 @ 15Hz 로 — 모델 입력은 늘 300x300 이라 검출 손해 없이 부하만 약 1/4
+cd ~/PX4-Autopilot/Tools/simulation/gz/models/mono_cam
+sed -i 's|<width>1280</width>|<width>640</width>|; s|<height>960</height>|<height>480</height>|; s|<update_rate>30</update_rate>|<update_rate>15</update_rate>|' model.sdf
+grep -E "<width>|<height>|<update_rate>" model.sdf     # 640 / 480 / 15 이면 OK (하방 기체도 같이 바뀜 — 6주차 노드는 영향 없음)
+```
+
+### 1) 실습 1 — 녹화 영상으로 (Gazebo 없이, 터미널 2개)
+```bash
+ros2 run drone_ros2_advanced w08_video_pub        # week08/samples/person_walk.mp4 → /camera/image_raw (반복)
+ros2 run drone_ros2_advanced w08_person           # 사람 박스 + 상태줄
+ros2 topic echo /sjcu/person_error                # (확인용) 숫자 5개
+```
+- `person_walk.mp4` 는 교수 촬영본으로 추가될 예정 — 그 전에는 내 영상·웹캠으로: `w08_video_pub ~/Videos/walk.mp4` / `w08_video_pub cam` (큰 영상은 가로 640 으로 줄여 보냄)
+- 일부러 틀리기: `ros2 run drone_ros2_advanced w08_person --ros-args -p target_class_id:=1` → VOC 1번은 비행기라 오류 없이 못 찾음
+
+### 2) 실습 2 — 드론 정면 카메라로 (비행 없음, 터미널 3개)
+```bash
+# 터미널 1: 정면 카메라 기체 + 사람 월드 (HEADLESS=1 은 명령 앞에만 — export 하지 말 것)
+cd ~/PX4-Autopilot && HEADLESS=1 PX4_GZ_WORLD=person_world make px4_sitl gz_x500_mono_cam
+# 터미널 2: pxh> 가 뜬 뒤에 브리지 — [감지] ... model=x500_mono_cam_0 줄 확인
+ros2 run drone_ros2_advanced w05_camera_bridge
+# 터미널 3: 실습 1 과 같은 명령
+ros2 run drone_ros2_advanced w08_person
+```
+- 사람은 드론 앞 4 m ↔ 8 m 를 한 바퀴(시뮬레이션 약 76초) 돕니다: 멀어짐(뒷모습) → 8 m 정지(앞모습) → 다가옴(앞모습) → 4 m 가로지름(옆모습) → 4 m 정지(앞모습)
+- 창 왼쪽 위: `person 신뢰도  x=… y=…  h=박스 높이px (화면 높이 비율)` / 오른쪽 끝 파란 막대 = 목표 박스 높이(`target_box_ratio` × 화면 높이)
+- 상태줄(왼쪽 아래): `threshold 기준값 | 처리 ms | pub 발행 Hz | found 검출률 %` — 발행 Hz·검출률은 **기준값을 바꾼 뒤부터** 최대 10초 평균이라, 슬라이더를 옮기면 2~3초 기다렸다 읽기. `ros2 topic hz -w 10 /sjcu/person_error` 로도 확인
+- 조작(창 클릭 후): 슬라이더 = 기준값(25~95%) · `s` = 원본 + 화면 저장 · `q` = 종료
+- 재빌드 없이 바꾸기: `--ros-args -p conf_threshold:=0.5` · `-p target_box_ratio:=0.33` · `-p max_rate:=3.0` (VM 이 버거우면)
+
+### 막혔을 때
+| 증상 | 원인 → 해결 |
+|------|-------------|
+| 창에 `Waiting for camera ...` | 영상이 안 옴 → `ros2 topic hz /camera/image_raw` 확인. 실습 2 면 브리지를 `pxh>` 뒤에 켰는지 |
+| 브리지가 `[경고] … 기본값으로 시도` + 하방 기체 안내 | Gazebo 가 뜨기 전에 켬 → 그 안내는 무시하고 Ctrl+C → `pxh>` 확인 → 다시. 직접 지정: `--world person_world --model x500_mono_cam_0 --sensor imager` (셋 다) |
+| 화면 두 개가 번갈아 보임 | 영상 발행기와 브리지가 동시에 켜짐 → `ros2 topic info /camera/image_raw` 의 Publisher count 가 1 이 되게 하나를 끔 |
+| 사람이 안 보임 | 사람 모델 복사 누락 → `ls ~/PX4-Autopilot/Tools/simulation/gz/models \| grep sjcu` (sjcu_walker 가 있어야 함) |
+| 사람이 땅에 반쯤 묻힘 | 월드를 고치며 actor waypoint `<pose>` 의 z 를 0 으로 둠 → z = 1.0 (walk.dae 원점이 허리 높이, 4주차 종이상자 z 함정과 같음) |
+| `gazebo already running world:` | 이전 Gazebo 서버가 남음 → `pkill -9 -f "gz sim"` → `pgrep -af "gz sim"` 빈 줄 확인 후 다시 |
+| `readNetFromCaffe 가 없습니다` / `모델 파일이 없습니다` | 13강 0부와 같음 — OpenCV 4.11 로 되돌리기 / `colcon build` 다시 |
+
+- 강사용: `worlds/person_check_world.sdf` (사람이 3·4·5·6·8 m 에서 약 10초씩 정지 — 거리별 신뢰도 측정)
+- 강사용 녹화: `w08_video_pub --record gazebo_front.mp4` (지금 폴더에 저장, Ctrl+C 로 끝) → 바로 재생은 `w08_video_pub ./gazebo_front.mp4`. `w08_video_pub gazebo` 로 쓰려면 src 의 `week08/samples/` 로 옮긴 뒤 `colcon build --packages-select drone_ros2_advanced` → `source install/setup.bash`
+
 ## 4주차 커스텀 World
 ```bash
 # 1) PX4 월드 폴더로 복사 (PX4가 월드를 찾는 경로가 고정돼 있음)
@@ -208,14 +264,14 @@ gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construc
 ```
 drone_ros2_advanced/
 ├── config/waypoints.yaml      # 3주차~ waypoint 미션 설정
+├── worlds/                    # Gazebo World (PX4 폴더로 복사해 사용): 4주차 my_custom_world, 8주차 person_world + models/
 └── drone_ros2_advanced/
     ├── px4_base.py            # PX4Base 클래스 (base 버전의 부모)
     ├── week02/                # 노드 기초 + 키보드 제어
     ├── week03/                # 단일·다중 Waypoint 비행
-    ├── worlds/                # 4주차 커스텀 Gazebo World (PX4 폴더로 복사해 사용)
     ├── week05/                # 카메라 · OpenCV · ArUco
     ├── week06/                # 오차 제어 · 정밀착륙
-    ├── week08/                # 객체 인식 (dnn_demo · models/ MobileNet-SSD · samples/ 예시 사진)
+    ├── week08/                # 객체 인식 (dnn_demo · person_detector · video_publisher · models/ MobileNet-SSD · samples/ 예시 사진·영상)
     ├── week09/                # 사람 추종 비행
     ├── week13/                # 추종 안정화 (통합 미션)
     ├── week14/                # 심화 (YOLO)

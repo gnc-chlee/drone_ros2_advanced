@@ -1,0 +1,40 @@
+<?xml version="1.0" ?>
+<!--
+  sjcu_person_board — 사진 입간판 (Plan B: Gazebo actor 를 검출기가 잘 못 잡을 때)
+
+  - 마커(arucotag)와 같은 "그림을 입힌 상자"라 VM 에서도 가볍게 그려진다.
+  - 사진: materials/textures/person.png  ← 교수 전신 사진(세로, 배경 단순, 약 512×1280)으로 바꿔 넣기
+  - 판의 앞면은 -x 쪽(서쪽)을 본다 → 드론 앞 (x, y) 에 yaw 0 으로 두면 드론이 사진 앞면을 본다.
+      <include><uri>model://sjcu_person_board</uri><name>board_4m</name><pose>4 0 0 0 0 0</pose></include>
+  - [VM 확인] 사진이 옆으로 누워 보이면 사진 파일을 90° 돌려서 저장한다 (좌우 반전은 검출에 영향 없음).
+-->
+<sdf version="1.9">
+  <model name="sjcu_person_board">
+    <static>true</static>
+    <link name="board">
+      <pose>0 0 0.9 0 0 0</pose>                 <!-- 판 높이 1.8 m 의 절반 → 바닥에 딱 닿음 -->
+      <visual name="photo">
+        <geometry>
+          <box><size>0.02 0.7 1.8</size></box>    <!-- 두께(x) 폭(y) 높이(z) [m] -->
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular>
+          <pbr>
+            <metal>
+              <albedo_map>model://sjcu_person_board/materials/textures/person.png</albedo_map>
+              <roughness>1.0</roughness>
+              <metalness>0.0</metalness>
+            </metal>
+          </pbr>
+        </material>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <box><size>0.02 0.7 1.8</size></box>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>
