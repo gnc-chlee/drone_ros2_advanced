@@ -3,7 +3,7 @@
 # File    : aruco_detector.py  (5주차 2강 - 수업용 최소판)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-09-21
-# Version : 3.0.0
+# Version : 3.0.1  (2026-10-09: q 종료 시 멈춤 수정 — 종료 표시 + main 반복)
 #
 # Description:
 #   ArUco 마커 감지 노드 — 카메라 화면에서 마커를 찾아
@@ -98,6 +98,9 @@ class ArucoDetector(Node):
             cv2.resizeWindow('ArUco Detector (q: quit)', 640, 480)   # 처음엔 절반 크기로
 
         self.frame_count = 0
+        # q → 이 표시만 세우고, 실제 종료는 main 이 한다
+        #   (콜백 안에서 rclpy.shutdown() 을 부르면 Humble 에서는 노드가 멈춰 끝나지 않는다)
+        self.quit_requested = False
         self.get_logger().info(
             f'ArUco 감지 시작!\n'
             f'  구독: {self.image_topic}   발행: /sjcu/error\n'
@@ -173,14 +176,16 @@ class ArucoDetector(Node):
         if self.display:
             cv2.imshow('ArUco Detector (q: quit)', frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
-                rclpy.shutdown()
+                self.quit_requested = True     # main 의 반복이 멈춘다
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = ArucoDetector()
     try:
-        rclpy.spin(node)
+        # rclpy.spin(node) 대신: q 를 누르면(quit_requested) 반복을 멈춘다
+        while rclpy.ok() and not node.quit_requested:
+            rclpy.spin_once(node, timeout_sec=0.1)
     except KeyboardInterrupt:
         pass
     finally:

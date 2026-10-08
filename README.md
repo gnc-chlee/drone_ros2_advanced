@@ -67,7 +67,7 @@ cd ~/ros2_ws && colcon build --packages-select drone_ros2_advanced && source ins
 
 - 첫 줄: 내 컴퓨터의 저장소를 **GitHub와 똑같이** 맞춥니다. 실습하면서 제공 파일을 고쳤어도 상관없이 **항상 성공**합니다
 - 둘째 줄: 새로 추가된 노드를 `ros2 run` 으로 실행할 수 있게 빌드합니다 (빌드를 빼먹으면 "No executable found")
-- 확인: `ros2 pkg executables drone_ros2_advanced` 에 이번 주 노드 이름이 보이면 끝
+- 확인: `ros2 pkg executables drone_ros2_advanced` 에 그 주차 노드 이름(예: 8주차면 `w08_…`)이 보이면 끝
 
 ### 이 명령이 하는 일 / 안 하는 일
 
