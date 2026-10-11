@@ -15,7 +15,8 @@
 #   Gazebo 가 너무 느린 PC 의 대체 경로로 씁니다.
 #
 #   실행 방법:
-#     ros2 run drone_ros2_advanced w08_video_pub                    # samples/person_walk.mp4 (반복 재생, 교수 촬영본)
+#     ros2 run drone_ros2_advanced w08_video_pub                    # samples/ 의 동봉 영상 (반복 재생)
+#                                                                   #   person_walk.mp4 가 있으면 그것, 없으면 gazebo_front.mp4
 #     ros2 run drone_ros2_advanced w08_video_pub gazebo             # samples/gazebo_front.mp4 (Gazebo 녹화본)
 #     ros2 run drone_ros2_advanced w08_video_pub ~/Videos/walk.mp4  # 내 영상
 #     ros2 run drone_ros2_advanced w08_video_pub cam                # 웹캠 0번 (1번이면 cam1)
@@ -55,7 +56,8 @@ import numpy as np
 # ================================================================
 HERE       = os.path.dirname(os.path.abspath(__file__))
 SAMPLE_DIR = os.path.join(HERE, 'samples')
-SOURCES    = {None: 'person_walk.mp4', 'gazebo': 'gazebo_front.mp4'}   # 이름 → samples/ 안의 파일
+SOURCES    = {None: ('person_walk.mp4', 'gazebo_front.mp4'),       # 인자 없음 → 앞에서부터 있는 것
+              'gazebo': ('gazebo_front.mp4',)}                     # 이름 → samples/ 안의 파일
 
 IMAGE_TOPIC = '/camera/image_raw'
 INFO_TOPIC  = '/camera/camera_info'
@@ -196,9 +198,11 @@ def open_source(src):
         return cap, f'웹캠 {index}', False
 
     if src in SOURCES:
-        path = os.path.join(SAMPLE_DIR, SOURCES[src])
-        if not os.path.isfile(path):
-            print(f'[안내] 예시 영상이 없습니다: {path}')
+        names = SOURCES[src]
+        path = next((os.path.join(SAMPLE_DIR, n) for n in names
+                     if os.path.isfile(os.path.join(SAMPLE_DIR, n))), None)
+        if path is None:
+            print(f'[안내] 예시 영상이 없습니다: {" / ".join(names)}  (폴더: {SAMPLE_DIR})')
             print('       내 영상 경로를 주거나 웹캠을 쓰세요:')
             print('         ros2 run drone_ros2_advanced w08_video_pub ~/Videos/walk.mp4')
             print('         ros2 run drone_ros2_advanced w08_video_pub cam')
@@ -218,7 +222,7 @@ def open_source(src):
 def main(args=None):
     parser = argparse.ArgumentParser(description='영상·웹캠 → /camera/image_raw 발행 (14강)')
     parser.add_argument('source', nargs='?', default=None,
-                        help='영상 파일 경로, gazebo(Gazebo 녹화본), cam/cam1(웹캠). 없으면 samples/person_walk.mp4')
+                        help='영상 파일 경로, gazebo(Gazebo 녹화본), cam/cam1(웹캠). 없으면 samples/ 의 동봉 영상')
     parser.add_argument('--fps', type=float, default=0.0, help='발행 속도 (기본: 영상의 fps, 웹캠 15)')
     parser.add_argument('--width', type=int, default=640, help='이보다 넓은 영상은 이 폭으로 줄임 (0 = 그대로)')
     parser.add_argument('--no-loop', action='store_true', help='영상이 끝나면 반복하지 않고 멈춤')

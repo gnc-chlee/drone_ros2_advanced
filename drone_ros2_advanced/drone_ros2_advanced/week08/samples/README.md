@@ -26,8 +26,8 @@ ros2 run drone_ros2_advanced w08_dnn_demo ~/Pictures/my_photo.jpg   # 내 사진
 
 | 파일 | 쓰는 곳 | 내용 |
 |------|---------|------|
-| `person_walk.mp4` (교수 촬영 후 추가 예정 — 그 전에는 `w08_video_pub cam` 이나 내 영상 경로) | 14강 실습 1 (`w08_video_pub` 인자 없이) | 사람이 걷는 실사 영상 약 30초 — 가까이 앞모습 → 옆 → 뒤 → 멀어짐 → 멀리서 앞 → 화면 밖 → 돌아옴 |
-| `gazebo_front.mp4` | (선택) Gazebo 가 너무 느린 PC (`w08_video_pub gazebo`) | person_world 정면 카메라 녹화본 — `w08_video_pub --record gazebo_front.mp4` 로 만들어(지금 폴더에 저장) 이 폴더로 옮기고 `colcon build` |
+| `person_walk.mp4` (**저장소에 넣지 않음** — 교수 촬영본은 교안 시연 전용) | 내 PC 에 두고 쓰는 실사 영상 자리. 있으면 `w08_video_pub` 인자 없이 이것부터 재생 | 사람이 걷는 실사 영상 약 30초 — 가까이 앞모습 → 옆 → 뒤 → 멀어짐 → 멀리서 앞 → 화면 밖 → 돌아옴 |
+| `gazebo_front.mp4` | **14강 실습 1 기본 영상** (`w08_video_pub` 인자 없이 · `w08_video_pub gazebo`), Gazebo 가 너무 느린 PC 의 대체 경로 | person_world 정면 카메라 녹화본 — `w08_video_pub --record gazebo_front.mp4` 로 만들어(지금 폴더에 저장) 이 폴더로 옮기고 `colcon build` |
 
 - 권장 형식: 640×480(4:3), 15 fps, mp4(H.264). 더 큰 영상은 `w08_video_pub` 가 가로 640 으로 줄여 보내지만, 파일이 작을수록 저장소가 가볍습니다.
   ```bash

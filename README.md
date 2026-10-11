@@ -204,11 +204,11 @@ grep -E "<width>|<height>|<update_rate>" model.sdf     # 640 / 480 / 15 이면 O
 
 ### 1) 실습 1 — 녹화 영상으로 (Gazebo 없이, 터미널 2개)
 ```bash
-ros2 run drone_ros2_advanced w08_video_pub        # week08/samples/person_walk.mp4 → /camera/image_raw (반복)
+ros2 run drone_ros2_advanced w08_video_pub        # week08/samples/ 의 동봉 영상 → /camera/image_raw (반복)
 ros2 run drone_ros2_advanced w08_person           # 사람 박스 + 상태줄
 ros2 topic echo /sjcu/person_error                # (확인용) 숫자 5개
 ```
-- `person_walk.mp4` 는 교수 촬영본으로 추가될 예정 — 그 전에는 내 영상·웹캠으로: `w08_video_pub ~/Videos/walk.mp4` / `w08_video_pub cam` (큰 영상은 가로 640 으로 줄여 보냄)
+- 동봉 영상은 Gazebo 정면 카메라 녹화본(`gazebo_front.mp4`). 휴대폰으로 찍은 걷는 영상이 있으면 그걸 써도 됩니다: `w08_video_pub ~/Videos/walk.mp4` / `w08_video_pub cam` (큰 영상은 가로 640 으로 줄여 보냄)
 - 일부러 틀리기: `ros2 run drone_ros2_advanced w08_person --ros-args -p target_class_id:=1` → VOC 1번은 비행기라 오류 없이 못 찾음
 
 ### 2) 실습 2 — 드론 정면 카메라로 (비행 없음, 터미널 3개)
