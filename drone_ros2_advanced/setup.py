@@ -68,12 +68,10 @@ setup(
             'w08_video_pub = drone_ros2_advanced.week08.video_publisher:main',
             'w08_face_detector = drone_ros2_advanced.week08.face_detector:main',
 
-            # ── 9주차: 사람 추종 비행 ────────────────────────────
-            'w09_face_command = drone_ros2_advanced.week09.face_to_command:main',
-            'w09_p_control = drone_ros2_advanced.week09.p_control_demo:main',
-            'w09_follow_raw = drone_ros2_advanced.week09.face_following_raw:main',
-            'w09_follow_base = drone_ros2_advanced.week09.face_following_base:main',
-            'w09_drone_controller = drone_ros2_advanced.week09.drone_controller:main',
+            # ── 9주차: 사람 추종 비행 (PX4Base) ──────────────────
+            #    수업용: w05_camera_bridge + w08_person + w09_follow
+            #    (기본 = 명령만 보기, --ros-args -p fly:=true 로 비행. 구 얼굴 추종 코드는 extras/ 로 옮김)
+            'w09_follow = drone_ros2_advanced.week09.person_follow_base:main',
 
             # ── 13주차: 추종 안정화 (통합 미션 소재) ─────────────
             'w13_stable_raw = drone_ros2_advanced.week13.face_following_stable_raw:main',
