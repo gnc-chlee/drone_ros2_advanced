@@ -116,7 +116,7 @@ ros2 run drone_ros2_advanced w03_mission_raw --ros-args -p waypoint_file:=$(ros2
 | 6주차 | 마커 기준 오차 계산과 제어 / 정밀착륙 노드 | `w06_align` (마커 위 정렬) / `w06_land` (정밀착륙) — **PX4Base 첫 사용** (참고: 키보드 조합 `w06_keyboard_ab` + `w06_precision_land` 는 12주차 소재) |
 | 7주차 | **중간고사** | - |
 | 8주차 | OpenCV DNN 기반 객체 인식 / 사람 인식 노드 | `w08_dnn_demo` (13강: 사진·웹캠으로 DNN 4단계) / `w08_person` + `w08_video_pub`, `worlds/person_world.sdf` (14강: 영상 → 드론 정면 카메라에서 사람 찾기 → `/sjcu/person_error`) (참고: `w08_face_detector` Haar 원형) |
-| 9주차 | 사람 인식·추종 비행 제어 설계 / 추종 비행 실습 | `w09_follow` (+ 14강 구성 그대로: `w05_camera_bridge`·`w08_person`·`person_world`) — 15강: 명령만 보기(땅) / 16강: 회전만 → 날면서 앞뒤 켜기 |
+| 9주차 | 사람 인식·추종 비행 제어 설계 / 추종 비행 실습 | `w09_follow` (+ 14강 구성 그대로: `w05_camera_bridge`·`w08_person`·`person_world`) — 15강: 드라이 런(비행하지 않고 명령 값만 확인) / 16강: 회전만 → 비행 중에 전진 속도 켜기(단계적 통합, incremental integration) |
 | 10주차 | 거리 센서 개념 / LiDAR 고도 데이터 활용 | (추가 예정) |
 | 11주차 | 장애물 감지 원리 / 회피 비행 노드 | (추가 예정) |
 | 12주차 | 상태머신 기반 미션 설계 / 모드 전환 로직 | (추가 예정) |
@@ -241,43 +241,46 @@ ros2 run drone_ros2_advanced w08_person
 - 강사용 녹화: `w08_video_pub --record gazebo_front.mp4` (지금 폴더에 저장, Ctrl+C 로 끝) → 바로 재생은 `w08_video_pub ./gazebo_front.mp4`. `w08_video_pub gazebo` 로 쓰려면 src 의 `week08/samples/` 로 옮긴 뒤 `colcon build --packages-select drone_ros2_advanced` → `source install/setup.bash`
 
 ## 9주차 사람 추종 비행 (15·16강)
-14강의 `/sjcu/person_error` 를 받아 **화면 가운데, 같은 크기**로 사람을 따라가는 노드 `w09_follow` (6주차 `w06_align` 뼈대, PX4Base).
-- 가로 오차 `x_err` → **회전** (오른쪽에 있으면 오른쪽으로) / 크기 오차 `size_err` → **앞뒤** (작게 보이면 앞으로) / 고도 2 m 는 따로 유지
-- 1초 동안 오차가 안 오면 **놓침** → 화면 가장자리에서 사라졌으면 그쪽으로 천천히 돌며 찾고(최대 한 바퀴), 아니면 천천히 멈춰 제자리
-- 기본값은 **날지 않는 '명령만 보기'** — 날리려면 `-p fly:=true` 를 일부러 붙인다
+14강의 `/sjcu/person_error` 를 받아 **화면 가운데, 같은 크기**로 사람(이동 표적)을 추종하는 노드 `w09_follow` (6주차 `w06_align` 뼈대, PX4Base).
+- 가로 오차 `x_err` → **요 각속도** (오른쪽에 있으면 오른쪽으로 회전) / 크기 오차 `size_err` → **전진 속도** (작게 보이면 전진, 크게 보이면 후진) / 고도 2 m 는 따로 유지
+- 오차가 1초(타임아웃) 동안 안 오면 **표적 상실(target loss)** → 화면 가장자리에서 사라졌으면 그쪽으로 천천히 돌며 재탐색(최대 한 바퀴), 아니면 천천히 멈춰 제자리 호버링
+- 기본값은 **드라이 런(dry run)** — 비행하지 않고 명령 값만 확인한다. 비행하려면 `-p fly:=true` 를 일부러 붙인다
 
 ```bash
 # 0) 준비: 8주차 0) 준비(월드·모델 복사, 640x480)를 했으면 그대로. 비행 전 px4_msgs release/1.16 확인 (6주차 절)
 # 터미널 1: 정면 카메라 기체 + 사람 월드
 cd ~/PX4-Autopilot && HEADLESS=1 PX4_GZ_WORLD=person_world make px4_sitl gz_x500_mono_cam
-# 터미널 2: uXRCE-DDS Agent (비행할 때만 — 명령만 보기는 없어도 됨)
+# 터미널 2: uXRCE-DDS Agent (비행할 때만 — 드라이 런은 없어도 됨)
 MicroXRCEAgent udp4 -p 8888
 # 터미널 3: pxh> 가 뜬 뒤에 브리지
 ros2 run drone_ros2_advanced w05_camera_bridge
 # 터미널 4: 사람 인식 (14강 노드 그대로)
 ros2 run drone_ros2_advanced w08_person --ros-args -p conf_threshold:=0.3
 # 터미널 5: 추종 노드 — 단계별로
-ros2 run drone_ros2_advanced w09_follow                                         # 0단계(15강) 명령만 보기: 땅에서 부호 확인
+ros2 run drone_ros2_advanced w09_follow                                         # 0단계(15강) 드라이 런: 땅에서 부호 확인
 ros2 run drone_ros2_advanced w09_follow --ros-args -p fly:=true -p kp_fwd:=0.0  # 1단계(16강) 이륙 → 회전만
-ros2 param set /person_follow_base kp_fwd 6.0                                   # 2단계: 새 터미널에서, 날면서 앞뒤 켜기
+ros2 param set /person_follow_base kp_fwd 6.0                                   # 2단계: 새 터미널에서, 비행 중에 전진 속도 켜기
 ```
-- 로그 검산: `[FOLLOW] … ex=+0.25 → 회전 +0.20 rad/s = 0.8 × +0.25 (오른쪽) | es=-0.060 → 앞 +0.36 m/s = -6 × -0.060 | 짐작 거리 약 5.2 m …` (명령 = 게인 × 오차 — 6주차 로그에 검산 칸을 붙인 형식)
-- 날면서 바꾸기: `ros2 param set /person_follow_base kp_yaw 0.8` · `kp_fwd 0.0`(앞뒤 끄기) — 0.1초마다 다시 읽으므로 내려앉지 않고 바뀜 (`게인 바뀜: …` 한 줄이 찍힘)
-- 일부러 틀리기 (앞뒤를 끈 채로): `ros2 param set /person_follow_base kp_yaw -0.8` → 사람을 외면 → 1초 뒤 찾기 → 되돌리기 `kp_yaw 0.8`
+- 로그 검산 (명령 = 게인 × 오차 — 6주차 로그에 검산 칸을 붙인 형식)
+  - 드라이 런: `[드라이 런] ex=+0.25 → 요 각속도 +0.20 rad/s = 0.8 × +0.25 (오른쪽) | es=-0.020 → 전진 속도 +0.12 m/s = -6 × -0.020 | 추정 거리 약 4.3 m | conf 0.79`
+  - 비행: `[FOLLOW] 기수 +92° (실측 요 각속도 +0.20 rad/s) | ex=+0.25 → 요 각속도 +0.20 rad/s = 0.8 × +0.25 (오른쪽) | es=-0.060 → 전진 속도 +0.36 m/s = -6 × -0.060 | 추정 거리 약 5.2 m | 고도 2.0 m | conf 0.79`
+  - 최대값에 걸리면 포화(saturation) 표시: `요 각속도 +0.50 rad/s (포화, 0.8 × +1.00 = +0.80)` · 안전장치가 바꾼 값은 추정 거리 뒤(고도 앞)에 `| 보낸 전진 속도 +0.05 (가속도 제한)` (그 밖에 `(근접)`·`(지오펜스)`)
+- 비행 중에 바꾸기: `ros2 param set /person_follow_base kp_yaw 0.8` · `kp_fwd 0.0`(전진 속도 끄기) — 0.1초마다 다시 읽으므로 착륙하지 않고 바로 바뀜 (`게인 변경: kp_fwd 0 → 6` 같은 한 줄이 찍힘)
+- 일부러 틀리기 (전진 속도를 끈 채로): `ros2 param set /person_follow_base kp_yaw -0.8` → 사람 반대쪽으로 회전(양의 피드백) → 1초 뒤 재탐색 → 되돌리기 `kp_yaw 0.8`
 - **끝내는 순서**: PX4 터미널(`pxh>`)에서 `commander land` → 착지 확인 → `w09_follow` Ctrl+C. 비행 중에 노드를 먼저 끄면 1초 뒤 PX4 가 Offboard 신호 끊김 비상 동작으로 넘어갑니다
-- 그 밖의 파라미터: `-p search_rate:=0.0` (놓쳐도 찾지 않고 멈춤만 — 게인 0 으로 호버하며 검출만 잴 때도 함께) · 목표 거리는 검출기 쪽에서 `w08_person … -p target_box_ratio:=0.33` (약 3 m)
-- 드론은 원점으로 돌아오지 않고 사람을 따라 자리를 옮깁니다(한 바퀴 뒤 원점에서 약 4~5 m). **한 바퀴(약 76초) 따라간 뒤 착륙**하세요. 원점 6 m 울타리는 쫓아가거나 도망가며 멀어지는 것만 막습니다
+- 그 밖의 파라미터: `-p search_rate:=0.0` (표적을 상실해도 재탐색하지 않고 제자리 호버링만 — 게인 0 으로 호버링하며 검출만 잴 때도 함께) · 목표 거리는 검출기 쪽에서 `w08_person … -p target_box_ratio:=0.33` (약 3 m)
+- 드론은 원점으로 돌아오지 않고 사람을 따라 자리를 옮깁니다(한 바퀴 뒤 원점에서 약 4~5 m). **한 바퀴(약 76초) 추종한 뒤 착륙**하세요. 원점 6 m 지오펜스(geofence)는 전진하며 원점에서 멀어지는 것만 막고, 사람이 가까워서 하는 후진은 막지 않습니다
 
 | 증상 | 원인 → 해결 |
 |------|-------------|
-| 이륙 뒤 `[HOLD] 사람 기다리는 중` 만 나옴 | 오차가 안 옴 → `ros2 topic hz /sjcu/person_error`, HUD 에 박스가 있는지. 사람이 화면 밖이면 들어올 때까지 기다림(고장 아님) |
+| 이륙 뒤 `[HOLD] 표적 대기 (제자리 호버링)` 만 나옴 | 오차가 안 옴 → `ros2 topic hz /sjcu/person_error`, HUD 에 박스가 있는지. 사람이 화면 밖이면 들어올 때까지 표적 대기(고장 아님) |
 | 이륙하지 않고 "Offboard 모드 전환 / Arm 명령 전송" 반복 | px4_msgs 가 main → 6주차 절의 `release/1.16` 전환 |
-| 사람 반대쪽으로 돈다 | kp_yaw 부호 → `ros2 param set /person_follow_base kp_yaw 0.8` |
-| HOLD ↔ FOLLOW 가 자주 바뀜 | 검출이 1초 넘게 끊김(VM 부하) → `HEADLESS=1`, `conf_threshold:=0.3`, `w08_person` 창 줄이기 |
+| 사람 반대쪽으로 돈다 | kp_yaw 부호가 음수(양의 피드백) → `ros2 param set /person_follow_base kp_yaw 0.8` |
+| HOLD ↔ FOLLOW 가 자주 바뀜 | 검출이 타임아웃(1초)보다 오래 끊김(VM 부하) → `HEADLESS=1`, `conf_threshold:=0.3`, `w08_person` 창 줄이기 |
 | HUD 가 갑자기 사라짐 | HUD 창이 선택된 채 `q` → `w08_person` 종료. 키보드·명령 입력은 터미널을 클릭해 둔 뒤에 |
 | 구 `w09_follow_raw` 등이 아직 보임 | 예전 빌드의 실행 파일이 install 에 남은 것(정상). 치우려면 `cd ~/ros2_ws && rm -rf build/drone_ros2_advanced install/drone_ros2_advanced && colcon build --packages-select drone_ros2_advanced && source install/setup.bash` |
 | HUD 에 바닥만 보임 | 5·6주차 습관으로 `gz_x500_mono_cam_down` 실행 → 브리지 감지 줄이 `model=x500_mono_cam_0` 인지 확인, `make px4_sitl gz_x500_mono_cam` 으로 다시 |
-| 사람이 멀어져도 다가가지 않음 | 1단계 그대로(`kp_fwd 0`) → `ros2 param set /person_follow_base kp_fwd 6.0` 뒤 `게인 바뀜` 줄 확인. `너무 가까움`·`울타리` 경고가 찍히면 안전장치가 막는 중 |
+| 사람이 멀어져도 다가가지 않음 | 1단계 그대로(`kp_fwd 0`) → `ros2 param set /person_follow_base kp_fwd 6.0` 뒤 `게인 변경` 줄 확인. `근접`·`지오펜스` 경고가 찍히면 안전장치가 막는 중 |
 | `ros2 param set` 이 노드를 못 찾음 | 노드 이름 오타 → `ros2 node list` 에서 `/person_follow_base` 확인 |
 
 ## 4주차 커스텀 World
