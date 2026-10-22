@@ -21,8 +21,8 @@
 #     ros2 param set /p_control_demo kp_yaw 0.005
 #
 #   실행 방법:
-#     터미널 1: ros2 run drone_ros2_advanced w10_face_detector
-#     터미널 2: ros2 run drone_ros2_advanced w11_p_control
+#     터미널 1: ros2 run drone_ros2_advanced w08_face_detector
+#     터미널 2: python3 -m drone_ros2_advanced.extras.p_control_demo   (참고용 — setup.py 에 실행 이름 없음)
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced

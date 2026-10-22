@@ -20,7 +20,7 @@
 #   실행 방법:
 #     터미널 1: cd ~/PX4-Autopilot && make px4_sitl gz_x500
 #     터미널 2: MicroXRCEAgent udp4 -p 8888
-#     터미널 3: ros2 run drone_ros2_advanced w10_face_detector
+#     터미널 3: ros2 run drone_ros2_advanced w08_face_detector
 #     터미널 4: ros2 run drone_ros2_advanced w13_stable_raw
 #
 # Repository:

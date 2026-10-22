@@ -19,8 +19,8 @@
 #     얼굴이 작다   (h 작음)    → 너무 멀음   → 전진 (vx +)
 #
 #   실행 방법:
-#     터미널 1: ros2 run drone_ros2_advanced w10_face_detector
-#     터미널 2: ros2 run drone_ros2_advanced w10_face_command
+#     터미널 1: ros2 run drone_ros2_advanced w08_face_detector
+#     터미널 2: python3 -m drone_ros2_advanced.extras.face_to_command   (참고용 — setup.py 에 실행 이름 없음)
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced

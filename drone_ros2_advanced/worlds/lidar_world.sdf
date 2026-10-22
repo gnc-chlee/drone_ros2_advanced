@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ============================================================================
+  lidar_world.sdf  (10주차 17·18강 - 평지 + 상자 1개, 거리 센서·지형 추종 실습)
+
+  땅 + 해 + 높이 1.0 m 상자 1개만 있는 가장 단순한 월드입니다.
+  Fuel(온라인 모델)을 쓰지 않아 인터넷 없이 뜹니다.
+
+  드론은 원점에서 머리를 동쪽(+x)으로 두고 뜹니다 (PX4 v1.16 은 스폰 방향을 바꿀 수 없음).
+  그래서 동쪽으로 곧장 날면 상자 위를 통과합니다.
+
+    서                                                      동
+    원점(드론) ....... 4 m [====== 상자 3 m ======] 7 m ...... 9 m (18강 코스 끝)
+                           높이 1.0 m, 남북 폭 4 m
+
+  상자 위에서 숫자가 어떻게 바뀌는지 (17강 화면 읽기, 계산값):
+    - 상대 고도(이륙 지점 기준, NED -z) : 드론이 그 높이 그대로면 2.00 m 그대로
+    - 대지 고도(바로 아래 면까지)       : 2.00 m → 1.00 m (아래 면이 1 m 올라옴)
+    - LiDAR 값 = 대지 고도 + 장착 오프셋 약 0.18 m → 1.18 m
+
+  ★ 규칙 (4주차와 같음) ★
+    - 파일 이름(lidar_world.sdf) = <world name="lidar_world">
+      (다르면 PX4 가 "Timed out waiting for Gazebo world" 를 내며 종료)
+    - <world> 바로 아래에 <plugin> 을 쓰지 않는다 (PX4 server.config 자동 적용이 취소됨)
+    - 보이는 물체에는 <collision> 을 꼭 넣는다 (없으면 드론이 통과)
+    - <pose> 의 z 는 모델 원점 높이 → 높이 1.0 m 상자는 z = 0.5 (높이의 절반)
+
+  설치 (한 번만) - 월드 파일 1개를 PX4 로 복사:
+    cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+    cp lidar_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+
+  실행 (하방 LiDAR 기체 - 카메라 없음, 빔 1개가 아래를 봄):
+    cd ~/PX4-Autopilot
+    PX4_GZ_WORLD=lidar_world make px4_sitl gz_x500_lidar_down
+    (VM 이 버거우면 앞에 HEADLESS=1 을 붙임 - Gazebo 화면 없이 실행)
+
+  월드를 바꿀 때 (이전 Gazebo 서버가 남아 있으면 이전 월드가 다시 뜸):
+    pkill -9 -f "gz sim"   →   pgrep -af "gz sim" 이 빈 줄인지 확인 후 다시 실행
+
+  좌표 주의 (4주차 핵심):
+    Gazebo <pose> 는 ENU = x(동) y(북) z(위)
+    PX4  위치     는 NED = x(북) y(동) z(아래)
+    → 상자 <pose>5.5 0 0.5 …> = "동쪽 5.5 m, 북쪽 0 m" (상자 범위: 동 4~7 m, 북 -2~2 m)
+    → PX4 좌표로는 (북 0, 동 4~7) - 18강 노드는 NED 의 y(동쪽)로 코스 위치를 판단
+  ============================================================================
+-->
+<sdf version="1.9">
+  <world name="lidar_world">
+
+    <!-- ===== 여기부터 ===== PX4 기본 월드에서 그대로 가져온 부분 [복붙 영역]
+         (my_custom_world 와 같음. VM 렌더링이 버거우면 아래 <shadows> 와
+          <cast_shadows> 두 곳을 false 로 바꿔도 됨 - person_world 와 같은 방법) -->
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+    <scene>
+      <grid>false</grid>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>true</shadows>
+    </scene>
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1 1</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 -0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 -0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0 0 0 0 -0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <light name="sunUTC" type="directional">
+      <pose>0 0 500 0 -0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>0.001 0.625 -0.78</direction>
+      <diffuse>0.904 0.904 0.904 1</diffuse>
+      <specular>0.271 0.271 0.271 1</specular>
+      <attenuation>
+        <range>2000</range>
+        <linear>0</linear>
+        <constant>1</constant>
+        <quadratic>0</quadratic>
+      </attenuation>
+      <spot>
+        <inner_angle>0</inner_angle>
+        <outer_angle>0</outer_angle>
+        <falloff>0</falloff>
+      </spot>
+    </light>
+    <!-- ===== 여기까지 ===== [복붙 영역] 끝 -->
+
+    <!-- 시뮬레이션의 GPS 원점 (세종사이버대학교) - my_custom_world 와 같음 -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>37.551187</latitude_deg>
+      <longitude_deg>127.073880</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+
+    <!-- ========================================================
+         상자 1개 - 4주차처럼 모델을 파일 안에 직접 적었다 (인라인 <model>, Fuel 불필요)
+         - <static>true : 움직이지 않는 물체 (드론이 부딪혀도 밀리지 않음)
+         - <pose>5.5 0 0.5 0 0 0 : x(동) 5.5, y(북) 0, z = 높이 1.0 의 절반
+             → 동쪽 4~7 m (길이 3 m), 북쪽 -2~2 m (폭 4 m), 높이 0~1.0 m
+         - <size>3 4 1</size> : x(동서 길이 3 m) y(남북 폭 4 m) z(높이 1.0 m)
+         - <visual> = 눈에 보이는 모양, <collision> = 부딪히는 모양 → 같은 크기로
+           (LiDAR(gpu_lidar)는 화면을 그리는 방식으로 재는 센서라 보이는 모양을 잰다고 봄)
+         - 크기를 고른 이유 (계산값):
+             폭 4 m   : 기체가 옆으로 조금 흔들려도 빔이 상자 밖 땅을 잴 일이 없음
+             길이 3 m : 18강 전진 속도 0.3 m/s 로 약 10초 - 모서리 계단 응답(약 1 m)이 끝난 뒤
+                        윗면에서 대지 고도가 목표로 돌아오는 것을 볼 여유가 있음
+             높이 1.0 m : 목표 대지 고도 2 m - 최저 고도 제한 0.8 m = 1.2 m 보다 낮음
+                          (상자에 올라서는 순간에도 최저 고도 제한이 걸리지 않음)
+         - 상자를 하나 더 놓아 보려면 이 <model> 블록을 복사하고 name 과 <pose> 를 바꾼다
+         ======================================================== -->
+    <model name="step_box">
+      <static>true</static>
+      <pose>5.5 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>3 4 1</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>3 4 1</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.5 0.2 1</ambient>
+            <diffuse>0.9 0.5 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

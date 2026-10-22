@@ -73,6 +73,13 @@ setup(
             #    (기본 = 명령만 보기, --ros-args -p fly:=true 로 비행. 구 얼굴 추종 코드는 extras/ 로 옮김)
             'w09_follow = drone_ros2_advanced.week09.person_follow_base:main',
 
+            # ── 10주차: 거리 센서 · LiDAR 지형 추종 (PX4Base) ────────
+            #    수업용: w10_lidar_bridge + w10_range_viewer (17강) / + w10_terrain_follow (18강)
+            #    (기본 = 드라이 런, --ros-args -p fly:=true 로 비행. 전진 속도 기본 0 = 제자리 고도 유지)
+            'w10_lidar_bridge = drone_ros2_advanced.week10.lidar_bridge:main',
+            'w10_range_viewer = drone_ros2_advanced.week10.range_viewer:main',
+            'w10_terrain_follow = drone_ros2_advanced.week10.terrain_follow_base:main',
+
             # ── 13주차: 추종 안정화 (통합 미션 소재) ─────────────
             'w13_stable_raw = drone_ros2_advanced.week13.face_following_stable_raw:main',
             'w13_stable_base = drone_ros2_advanced.week13.face_following_stable_base:main',

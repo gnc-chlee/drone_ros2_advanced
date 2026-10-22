@@ -117,7 +117,7 @@ ros2 run drone_ros2_advanced w03_mission_raw --ros-args -p waypoint_file:=$(ros2
 | 7주차 | **중간고사** | - |
 | 8주차 | OpenCV DNN 기반 객체 인식 / 사람 인식 노드 | `w08_dnn_demo` (13강: 사진·웹캠으로 DNN 4단계) / `w08_person` + `w08_video_pub`, `worlds/person_world.sdf` (14강: 영상 → 드론 정면 카메라에서 사람 찾기 → `/sjcu/person_error`) (참고: `w08_face_detector` Haar 원형) |
 | 9주차 | 사람 인식·추종 비행 제어 설계 / 추종 비행 실습 | `w09_follow` (+ 14강 구성 그대로: `w05_camera_bridge`·`w08_person`·`person_world`) — 15강: 드라이 런(비행하지 않고 명령 값만 확인) / 16강: 회전만 → 비행 중에 전진 속도 켜기(단계적 통합, incremental integration) |
-| 10주차 | 거리 센서 개념 / LiDAR 고도 데이터 활용 | (추가 예정) |
+| 10주차 | 거리 센서 개념과 ROS2 토픽 연동 / LiDAR 고도 데이터 활용 실습 | `w10_lidar_bridge` + `w10_range_viewer`, `worlds/lidar_world.sdf` (17강: 하방 LiDAR 거리를 두 경로 — 브리지 원시값 `/lidar/down` · PX4 추정값 `dist_bottom` — 로 읽고 대지 고도 확인) / `w10_terrain_follow` (18강: 드라이 런 → 제자리 고도 유지 → 비행 중에 전진 속도 켜기로 상자 넘기 = 지형 추종, terrain following) |
 | 11주차 | 장애물 감지 원리 / 회피 비행 노드 | (추가 예정) |
 | 12주차 | 상태머신 기반 미션 설계 / 모드 전환 로직 | (추가 예정) |
 | 13주차 | 통합 시나리오 설계 / 통합 미션 구현·디버깅 | `w13_stable_raw` / `w13_stable_base` |
@@ -283,6 +283,120 @@ ros2 param set /person_follow_base kp_fwd 6.0                                   
 | 사람이 멀어져도 다가가지 않음 | 1단계 그대로(`kp_fwd 0`) → `ros2 param set /person_follow_base kp_fwd 6.0` 뒤 `게인 변경` 줄 확인. `근접`·`지오펜스` 경고가 찍히면 안전장치가 막는 중 |
 | `ros2 param set` 이 노드를 못 찾음 | 노드 이름 오타 → `ros2 node list` 에서 `/person_follow_base` 확인 |
 
+## 10주차 거리 센서 · LiDAR 지형 추종 (17·18강)
+드론 아래를 보는 **거리 센서(distance sensor)** — 빔 1개짜리 하방 **라이다(LiDAR)** — 로 바로 아래 면까지의 거리를 재고(17강), 그 값으로 높이 1 m 상자를 넘으며 대지 고도를 지키는 노드 `w10_terrain_follow` 를 실행합니다(18강, PX4Base).
+- 높이 두 가지: **상대 고도(relative altitude)** = 이륙 지점 기준 높이(NED `−z` — 2·6·9주차의 '고도') / **대지 고도(AGL, above ground level)** = 바로 아래 면(땅·상자 윗면)까지의 높이 = LiDAR − **장착 오프셋(mounting offset)** 약 0.18 m (계산). 평지에서는 둘이 같고, 상자 위에서는 대지 고도만 1 m 줄어듭니다
+- 거리 값이 ROS2 로 오는 **두 경로** (PX4 v1.16.0 기본 설정에는 `/fmu/out/distance_sensor` 가 없음): ① 브리지 `w10_lidar_bridge` → `/lidar/down` (`sensor_msgs/LaserScan`, **원시값**, `ranges[0]`) / ② PX4 `/fmu/out/vehicle_local_position` 의 `dist_bottom` (EKF **추정값** — 값보다 `dist_bottom_valid` 를 먼저 확인)
+- 18강 고도 한 줄은 9주차와 같은 비례 제어 `vz = kz × (높이 − 목표)` 에서 **높이만 상대 고도 → 대지 고도로** 바꾼 것입니다(**지형 추종, terrain following**). 기본값은 **드라이 런(dry run)** + 전진 속도 0(제자리) — 비행하려면 `-p fly:=true` 를 일부러 붙입니다
+
+### 0) 준비 (한 번만)
+```bash
+# LiDAR 월드를 PX4 폴더로 복사 — 평지 + 상자 1개(동쪽 4~7 m, 남북 폭 4 m, 높이 1.0 m), Fuel·인터넷 불필요
+cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+cp lidar_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+# 브리지는 5주차에 설치한 ros-humble-ros-gzharmonic 그대로 — 설치 확인 (Installed 줄에 버전이 찍히면 OK)
+apt-cache policy ros-humble-ros-gzharmonic-bridge
+```
+- 기체는 PX4 내장 **`gz_x500_lidar_down`** — 카메라 없음, 기체 중심 아래 5 cm 에 아래를 보는 LiDAR 1개(측정 범위 0.1~100 m, 갱신 주기 50 Hz). 5·6·8·9주차 습관으로 다른 기체를 띄우면 LiDAR 가 없습니다
+- 17강은 위치·자세 메시지만 읽어 px4_msgs 가 main 이어도 되지만, **18강 비행 전에는 `release/1.16` 필수** ([6주차 절](#6주차-시작-전에-한-번만--px4_msgs-버전-맞추기))
+
+### 1) 17강 — 거리 값 읽기 (비행 없음, 키보드 비행은 선택)
+```bash
+# 터미널 1: 하방 LiDAR 기체 + LiDAR 월드 (상자를 보려면 GUI 켬 — VM 이 버거우면 앞에 HEADLESS=1)
+cd ~/PX4-Autopilot && PX4_GZ_WORLD=lidar_world make px4_sitl gz_x500_lidar_down
+#   pxh> listener distance_sensor     ← 코드 없이 첫 확인: current_distance 약 0.18 (땅), orientation 25 (아래)
+# 터미널 2: uXRCE-DDS Agent (경로 ② dist_bottom 에 필요)
+MicroXRCEAgent udp4 -p 8888
+# 터미널 3: pxh> 가 뜬 뒤에 LiDAR 브리지 (경로 ①) — [감지] world=lidar_world model=x500_lidar_down_0 → /lidar/down 줄 확인
+ros2 run drone_ros2_advanced w10_lidar_bridge
+# 터미널 4: 측정 뷰어 — 비행하지 않음 (받아서 0.5초마다 한 줄 찍기만)
+ros2 run drone_ros2_advanced w10_range_viewer
+# 터미널 5 (선택): 2주차 키보드로 상자 위 통과 — T 이륙 → 약 2 m 에서 Space → W 한 번(동쪽 0.5 m/s) → 상자를 지나가면 Space
+ros2 run drone_ros2_advanced keyboard_control
+```
+- 확인 명령 (새 터미널)
+  - `ros2 topic list | grep distance` → `/fmu/in/distance_sensor`, `/fmu/in/obstacle_distance` 두 줄뿐 (둘 다 in = 내가 PX4 에 넣는 쪽 — PX4 가 내보내는 out 은 없음)
+  - 경로 ①: `ros2 topic echo --once /lidar/down` → `range_min: 0.1` · `range_max: 100.0` · `ranges:` 에 0.18 근처 한 칸 (빔 1개라 `angle_increment` 는 nan 일 수 있음). 발행 주기: `ros2 topic hz -w 50 /lidar/down` (약 50 Hz)
+  - 경로 ②: `ros2 topic echo /fmu/out/vehicle_local_position --field dist_bottom` (Ctrl+C 로 멈춤) — 같은 방법으로 `dist_bottom_valid`(믿어도 되는가), `dist_bottom_sensor_bitfield`(1 = 거리 센서로 추정)
+- 뷰어 로그 검산 (숫자는 계산 예 — 내 화면과 비교)
+  - 땅: `[측정] LiDAR 0.18 m (유효) → 대지 고도 0.00 m | 상대 고도 0.00 m | dist_bottom 0.18 m (유효, 거리 센서)`
+  - 상자 위: `[측정] LiDAR 1.18 m (유효) → 대지 고도 1.00 m | 상대 고도 2.00 m | 차이 1.00 m | dist_bottom 1.18 m (유효, 거리 센서)` → 1.18 − 0.18 = 1.00 (대지 고도), 2.00 − 1.00 = 1.00 (상자 높이). 드론이 내려간 것이 아니라 아래 면이 1 m 올라온 것
+  - 대지 고도 = LiDAR × cos(기울기) − 장착 오프셋. `차이` 칸은 상대 고도 − 대지 고도가 0.15 m 를 넘을 때만(상자 위). `dist_bottom` 은 PX4 숫자 그대로(오프셋 포함)
+- 뷰어 파라미터: `-p offset:=0.18` (장착 오프셋 — 내 VM 의 땅 값이 다르면 그 값으로) · `-p detail:=true` (기울기 · 1초 표본 수 · 최장 간격 · 1초 값 범위를 덧붙임) · `-p record:=true` (`~/w10_range_<시각>.csv` 에 0.1초마다 한 줄 — 그래프용)
+- 일부러 틀리기 (선택): `make px4_sitl gz_x500`(거리 센서 없는 기체)로 띄우면 브리지는 `[경고] Gazebo에서 LiDAR 토픽을 찾지 못했습니다 …` (`gz topic -l` 에는 PX4 가 구독만 해 둔 `…/lidar/scan` 이름이 보이지만 발행자가 없음), `dist_bottom` 은 **숫자는 나오지만 `dist_bottom_valid` 가 false** → 숫자가 있다고 측정값은 아니다 (기체를 바꿀 때는 `pkill -9 -f "gz sim"` 먼저)
+
+### 2) 18강 — 지형 추종 비행 (터미널 1·2·3·5)
+```bash
+# 터미널 1: PX4 (GUI 없이 — 상자 위에서 기체가 오르내리는 모습을 보려면 HEADLESS=1 을 뺌)
+cd ~/PX4-Autopilot && HEADLESS=1 PX4_GZ_WORLD=lidar_world make px4_sitl gz_x500_lidar_down
+# 터미널 2: uXRCE-DDS Agent (비행할 때만 — 드라이 런은 없어도 됨)
+MicroXRCEAgent udp4 -p 8888
+# 터미널 3: pxh> 가 뜬 뒤에 LiDAR 브리지 (0단계 드라이 런에서는 끈다)
+ros2 run drone_ros2_advanced w10_lidar_bridge
+# 터미널 5: 지형 추종 노드 — 단계별로
+ros2 run drone_ros2_advanced w10_terrain_follow                          # 0단계: 드라이 런 (아래 모의 측정값과 함께, PX4 없이도 됨)
+ros2 run drone_ros2_advanced w10_terrain_follow --ros-args -p fly:=true  # 1단계: 이륙 → 제자리 고도 유지 (전진 속도 기본 0)
+ros2 param set /terrain_follow_base target_agl 3.0                       #   계단 응답: 새 터미널에서 목표 1 m 올리기 → 2.0 으로 되돌리기
+ros2 param set /terrain_follow_base cruise_speed 0.3                     # 2단계: 비행 중에 전진 켜기 → 상자 넘기 → 동쪽 9 m 에서 코스 끝
+```
+- 4번 자리는 기록용 뷰어(`w10_range_viewer --ros-args -p record:=true`, 선택). **키보드 노드와 지형 추종 노드는 함께 켜지 않습니다** (Offboard 명령이 섞임)
+
+**0단계 드라이 런 — 모의 측정값(simulated measurement)으로 부호 확인** (땅, 브리지(3번)는 끄고): 새 터미널에서 `ranges` 숫자만 바꿔 가며 발행합니다. "땅에 앉은 드론에게 여기가 상자 위라면?"을 물어보는 것.
+```bash
+ros2 topic pub -r 10 /lidar/down sensor_msgs/msg/LaserScan "{range_min: 0.1, range_max: 100.0, ranges: [1.18]}"
+```
+
+| 모의 측정값 (`ranges`) | 대지 고도 | 수직 속도 (NED: + = 하강) |
+|------|------|------|
+| `1.18` (상자 위라면) | 1.00 m | −0.50 m/s (포화, 상승) |
+| `3.18` (상자에서 내려선 순간이라면) | 3.00 m | +0.50 m/s (포화, 하강) |
+| `2.18` (평지 목표 고도라면) | 2.00 m | 0 (유지) |
+| `.inf` | — | 계산하지 않음 → `LiDAR 측정 무효 (inf: 범위 밖)` |
+
+- 노드를 발행보다 먼저 켜면 `[드라이 런] 거리 센서 신호 없음 …` 경고가 2초마다 나오는 것이 정상. 모의 측정값을 발행하면 **약 1초 뒤** `거리 센서 신호 복구 (1.0초 연속) → 지형 추종 재개` 한 줄과 함께 `[드라이 런] …` 검산 줄이 나옴 (유효한 값이 1.0초 이어져야 복구). 값을 바꾸려고 발행을 Ctrl+C 하면 0.5초 뒤 `거리 센서 신호 없음 (0.5초)`, 새 값으로 다시 발행하면 다시 약 1초 뒤 검산 줄
+- `-p kz:=-1.0` 으로 다시 켜면 `1.18` 에서 '(하강)' → 부호가 틀렸다는 뜻. 오류 메시지 없는 부호 실수를 땅에서 잡습니다
+- 드라이 런 로그는 최저·최대 고도 제한을 적용하기 **전**의 명령(포화까지 적용)을 찍습니다 — 땅에서는 최저 고도 제한이 늘 걸려 부호 실수를 가리기 때문
+
+**로그 검산** (대지 고도 = LiDAR × cos(기울기) − 0.18 → 높이 오차 = 대지 고도 − 목표 → 수직 속도 = kz × 높이 오차, 최대 0.5 m/s)
+- 드라이 런: `[드라이 런] 고도 기준 lidar | 대지 고도 1.00 m (LiDAR 1.18 m, 기울기 0°) | 높이 오차 -1.00 m → 수직 속도 -0.50 m/s (포화, 1 × -1.00 = -1.00) (상승)`
+- 1단계 평지 호버: `[CRUISE] 동 +0.0 m | 고도 기준 lidar | 대지 고도 1.95 m (LiDAR 2.13 m, 기울기 1°) | 높이 오차 -0.05 m → 수직 속도 -0.05 m/s = 1 × -0.05 (상승) | 상대 고도 1.96 m | 전진 +0.00 m/s` (dist_bottom 칸 생략) — 대지 고도 ≈ 상대 고도이면 장착 오프셋이 맞음
+- 2단계 상자에 들어선 직후 (계산): `[CRUISE] 동 +4.0 m | 고도 기준 lidar | 대지 고도 1.02 m (LiDAR 1.20 m, 기울기 1°) | 높이 오차 -0.98 m → 수직 속도 -0.50 m/s (포화, 1 × -0.98 = -0.98) (상승) | 상대 고도 2.03 m | 전진 +0.30 m/s` (dist_bottom 칸 생략) → 약 3초 뒤 대지 고도 2.0 근처, 상대 고도 약 3.0 (상자 위에서 기체가 1 m 올라감)
+- 포화가 아니면 `= kz × 오차`, 최대값에 걸리면 `(포화, kz × 오차 = 값)`. 안전장치가 바꾼 값: `최저 고도 0.8 m 아래 (대지 고도 0.62 m) → 상승 0.30 m/s 이상 | 보낸 수직 속도 -0.30 (최저 고도)` · `최대 고도 제한 5.0 m → 상승 정지` · `코스 끝 (동 9.0 m) → 전진 정지 (되돌아가려면 cruise_speed 를 음수로)`
+- 계단 응답(step response, 계산): `target_agl 3.0` → 처음 약 1초는 포화(0.5 m/s), 그 뒤로 점점 천천히 — 약 2.6초에 2.9 m. 상자에 올라서는 순간도 같은 모양(대지 고도가 한순간 1 m 줄어드는 계단 입력)
+
+**비행 중에 바꾸기** — 0.1초마다 다시 읽으므로 착륙하지 않고 바로 바뀝니다(바뀌면 `게인 변경: kz 1 → -1` · `목표 대지 고도 변경: 2 → 3` · `전진 속도 변경: 0 → 0.3` · `고도 기준 변경: lidar → ned` 같은 한 줄)
+- `kz` (기본 1.0) · `target_agl` (기본 2.0, 1.8~3.5 m 만 받음) · `cruise_speed` (기본 0.0, 최대 ±0.5 m/s, 음수 = 서쪽으로 되돌아오기) · `alt_source` = **고도 기준(height reference)**: `lidar`(기본, 경로 ① 원시값 − 장착 오프셋) / `ekf`(경로 ② `dist_bottom` − 장착 오프셋) / `ned`(상대 고도 — 9주차와 같음). 범위 밖·철자 오류는 경고 후 이전 값 유지. `fly` 는 시작할 때만
+
+**일부러 틀리기**
+- 9주차 방식으로 되돌리기: 코스 끝(평지)에서 `ros2 param set /terrain_follow_base alt_source ned` → `cruise_speed -0.3` 으로 되돌아오며 상자 통과 → 상대 고도 2 m 그대로라 상자 위 대지 고도는 1 m (상자를 못 보는 고도 유지). 되돌리기 `alt_source lidar`
+- 브리지 끄기 = **신호 없음(signal loss)**: 상자 위에서 3번 터미널 Ctrl+C → `거리 센서 신호 없음 (0.5초) → 상대 고도 2.98 m 유지, 전진 정지` → 브리지 다시 실행 → `거리 센서 신호 복구 (1.0초 연속) → 지형 추종 재개`
+- `kz` 부호 뒤집기는 **땅 드라이 런(`-p kz:=-1.0`)에서만**. 비행 중 부호 뒤집기(양의 피드백)는 교수 시연입니다
+
+- 안전장치 ([복붙 영역]): 유효성 검사(`inf` = 범위 밖, `range_min`·`range_max` 와 같은 경계값, 45° 넘게 기운 값은 버림) · 센서 타임아웃 0.5초 → 신호 없음(끊긴 순간의 상대 고도 유지 + 전진 정지, 유효한 값이 1.0초 이어지면 복구) · 최저 고도 제한 0.8 m(대지 고도 — 고도 기준과 상관없이) · 최대 고도 제한 5 m(상대 고도) · 포화(수직·전진 0.5 m/s)와 가속도 제한 · 코스 동쪽 0~9 m
+- **끝내는 순서**: PX4 터미널(`pxh>`)에서 `commander land` → 착지 확인 → `w10_terrain_follow` Ctrl+C (그다음 3 → 2 → 1). 비행 중에 노드를 먼저 끄면 1초 뒤 PX4 가 Offboard 신호 끊김 비상 동작으로 넘어갑니다
+
+### 막혔을 때
+| 증상 | 원인 → 해결 |
+|------|-------------|
+| 브리지 `[경고] Gazebo에서 LiDAR 토픽을 찾지 못했습니다. 기본값으로 시도합니다.` | LiDAR 없는 기체(`gz_x500`·`gz_x500_mono_cam` 등)로 띄움 / PX4 보다 먼저 켬 → `gz topic -i -t $(gz topic -l \| grep "lidar/scan$")` 에 `No publishers on topic` 이 뜨면 LiDAR 없는 기체 (Harmonic 의 `gz topic -l` 은 PX4 가 구독만 한 scan 토픽도 보여 줌), `make px4_sitl gz_x500_lidar_down` 으로 다시, 브리지는 `pxh>` 뒤에 |
+| 브리지 `[경고] 전방 LiDAR 기체입니다` | `gz_x500_lidar_front` 로 띄움 → `gz_x500_lidar_down` 으로 다시 |
+| `Timed out waiting for Gazebo world` | 월드 복사 누락 → `ls ~/PX4-Autopilot/Tools/simulation/gz/worlds \| grep lidar`, 0) 준비의 `cp` |
+| 이전 월드가 뜸 / `gazebo already running world:` | 이전 Gazebo 서버가 남음 → `pkill -9 -f "gz sim"` → `pgrep -af "gz sim"` 빈 줄 확인 후 다시 |
+| `ros2 topic echo /lidar/down` 에 아무것도 없음 (브리지는 실행 중) | 브리지 감지 줄의 월드·기체 이름 확인 → `ros2 topic info -v /lidar/down`, 브리지 다시 실행 |
+| 땅인데 LiDAR 가 `100.0` 고정 또는 `inf` | 렌더링 실패(VM) → `HEADLESS=1` → 그래도 안 되면 `export LIBGL_ALWAYS_SOFTWARE=1` (한 번에 하나씩 바꿔 보기) |
+| 땅인데 LiDAR 가 0.18 이 아닌 다른 값 | 모델·버전 차이 → 뷰어 `-p detail:=true` 의 1초 값 범위를 보고 `-p offset:=<그 값>` |
+| 뷰어 `PX4 위치 없음` / `자세 없음` | Agent 미실행 / source 누락 → 터미널 2 Agent, `source install/setup.bash` (땅 실습에서 자세 없음은 정상 — 기울기 0 으로 봄) |
+| `dist_bottom_valid` 가 계속 false, 값은 −z + 0.1 정도로만 따라감 | 거리 센서 없는 기체 → 기체 이름 확인, `gz_x500_lidar_down` 으로 (17강 일부러 틀리기 상황) |
+| 드라이 런 로그가 0.18 과 모의 측정값을 번갈아 냄 | 브리지가 켜진 채 모의 측정값 발행 → `ros2 topic info /lidar/down` 의 Publisher count 가 1 이 되게 브리지(3번)를 끔 |
+| `ros2 topic pub` 가 오류 | YAML 따옴표·괄호 누락 → 위 명령을 그대로 복사 |
+| 이륙하지 않고 "Offboard 모드 전환 / Arm 명령 전송" 반복 | px4_msgs 가 main → 6주차 절의 `release/1.16` 전환 |
+| 이륙 직후 `거리 센서 신호 없음` | 브리지 미실행 / LiDAR 없는 기체 / `alt_source ekf` 인데 `dist_bottom_valid` 가 false → `ros2 topic hz /lidar/down`, 이 표 첫 줄 확인 |
+| 신호 없음이 자주 뜸 | 갱신 주기가 낮음(VM 부하) / 브리지 꺼짐 → `HEADLESS=1`, 뷰어 `-p detail:=true` 로 1초 표본 수·최장 간격 확인 |
+| 상자 위에서 오히려 내려감 | `kz` 음수 / `alt_source` 가 `ned` → 로그의 `게인 변경`·`고도 기준 변경` 줄 확인, `kz 1.0`, `alt_source lidar` |
+| 이륙 뒤 앞으로 안 감 | 1단계 그대로(`cruise_speed` 0) / 코스 끝 / 신호 없음 상태 → `cruise_speed 0.3` (코스 끝에서 되돌아오려면 `-0.3`) |
+| `ros2 param set` 이 노드를 못 찾음 / 값이 안 먹음 | 노드 이름 오타 / `alt_source` 철자 / `target_agl` 범위 밖 → `ros2 node list` 에서 `/terrain_follow_base`, `lidar`·`ned`·`ekf`, 1.8~3.5 m |
+| 키보드 W 로 갔는데 상자를 비켜 감 / 키 반응 없음 | 기수가 동쪽이 아님 / 다른 창에 포커스 → 원점에서 다시 이륙 / 키보드 터미널 클릭 |
+
 ## 4주차 커스텀 World
 ```bash
 # 1) PX4 월드 폴더로 복사 (PX4가 월드를 찾는 경로가 고정돼 있음)
@@ -307,7 +421,7 @@ gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construc
 ```
 drone_ros2_advanced/
 ├── config/waypoints.yaml      # 3주차~ waypoint 미션 설정
-├── worlds/                    # Gazebo World (PX4 폴더로 복사해 사용): 4주차 my_custom_world, 8주차 person_world + models/
+├── worlds/                    # Gazebo World (PX4 폴더로 복사해 사용): 4주차 my_custom_world, 8주차 person_world + models/, 10주차 lidar_world
 └── drone_ros2_advanced/
     ├── px4_base.py            # PX4Base 클래스 (base 버전의 부모)
     ├── week02/                # 노드 기초 + 키보드 제어
@@ -316,11 +430,12 @@ drone_ros2_advanced/
     ├── week06/                # 오차 제어 · 정밀착륙
     ├── week08/                # 객체 인식 (dnn_demo · person_detector · video_publisher · models/ MobileNet-SSD · samples/ 예시 사진·영상)
     ├── week09/                # 사람 추종 비행 (person_follow_base = w09_follow)
+    ├── week10/                # 거리 센서 · LiDAR 지형 추종 (lidar_bridge = w10_lidar_bridge · range_viewer = w10_range_viewer · terrain_follow_base = w10_terrain_follow)
     ├── week13/                # 추종 안정화 (통합 미션)
     ├── week14/                # 심화 (YOLO)
     └── extras/                # 구 커리큘럼 자료 (참고용): GPS/지도(folium·flask 필요), 구 9주차 얼굴 추종 코드
 ```
-※ week10~12(LiDAR·회피·상태머신)는 교안 제작 진도에 맞춰 추가됩니다. 4주차는 파이썬 노드가 아니라 `worlds/` 의 SDF 파일이 실습 자산입니다.
+※ week11~12(회피·상태머신)는 교안 제작 진도에 맞춰 추가됩니다. 4주차는 파이썬 노드가 아니라 `worlds/` 의 SDF 파일이 실습 자산입니다.
 
 ## 참고
 - 트러블슈팅: Gazebo 화면이 검게 나오면 `export LIBGL_ALWAYS_SOFTWARE=1` (VM 환경)
