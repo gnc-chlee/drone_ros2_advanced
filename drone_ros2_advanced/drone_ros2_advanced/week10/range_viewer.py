@@ -2,8 +2,8 @@
 # ==============================================================================
 # File    : range_viewer.py  (10주차 17강 - 측정 뷰어)
 # Author  : Choonghyun Lee (gnc-chlee)
-# Date    : 2026-10-22
-# Version : 1.0.0
+# Date    : 2026-10-27
+# Version : 1.1.0
 #
 # Description:
 #   거리 센서 측정 뷰어 — 같은 LiDAR 측정을 두 경로로 받아 0.5초마다 한 줄로 비교한다
@@ -15,6 +15,8 @@
 #     경로 ② PX4 길    : Gazebo LiDAR → PX4 EKF2 지형 추정 → vehicle_local_position 의 dist_bottom = 추정값
 #     ※ /fmu/out/distance_sensor 는 PX4 기본 목록에 없어 ROS2 로 나오지 않는다
 #       → PX4 를 다시 빌드하지 않고 읽는 길이 위 두 개
+#     경로 ③ (심화) : PX4 dds_topics.yaml 에 두 줄 넣고 PX4 를 다시 빌드 → /fmu/out/distance_sensor (DistanceSensor)
+#       = 원시값. 실제 드론에서도 쓰는 길 → -p range_source:=px4 로 LiDAR 칸을 이 값으로 (README 10주차 심화)
 #
 #   핵심 공식:
 #     대지 고도 = LiDAR × cos(기울기) − 장착 오프셋(0.18 m)  ← 다리 끝에서 바로 아래 면까지 = 착지까지 남은 높이
@@ -23,12 +25,14 @@
 #     dist_bottom 은 PX4 숫자 그대로 보여 준다 (장착 오프셋이 들어 있는 값)
 #
 #   유효성 검사 (믿기 전에 버리는 값 — 숫자는 보여 주되 '(유효하지 않음)' 을 붙인다):
-#     LiDAR      : 범위 밖(inf) · 경계값(range_min·range_max 와 같은 값) · 45° 넘게 기욺
+#     LiDAR      : 범위 밖(inf) · 경계값(range_min·range_max 와 같은 값) · 45° 넘게 기욺 · 신호 품질 0 (경로 ③ 만)
 #     dist_bottom: dist_bottom_valid 가 False · dist_bottom_sensor_bitfield 에 거리 센서(1)가 없음
 #     경고는 상태가 바뀔 때만 한 줄 (같은 경고를 0.5초마다 다시 찍지 않음)
 #
 #   구독 토픽:
 #     /lidar/down                     : LaserScan — ranges[0], range_min, range_max (w10_lidar_bridge)
+#     /fmu/out/distance_sensor        : DistanceSensor — current_distance, min/max_distance, signal_quality
+#                                       (경로 ③, PX4 를 다시 빌드해야 나옴. 둘 다 늘 구독, LiDAR 칸은 range_source 가 고름)
 #     /fmu/out/vehicle_local_position : 상대 고도(z), 북·동 위치, dist_bottom 과 유효 플래그
 #     /fmu/out/vehicle_attitude       : 자세 → cos(기울기) (기울기 보정용)
 #
@@ -38,7 +42,8 @@
 #     터미널 3: ros2 run drone_ros2_advanced w10_lidar_bridge  ← pxh> 가 뜬 뒤에! (없으면 LiDAR 칸은 '-')
 #     터미널 4: ros2 run drone_ros2_advanced w10_range_viewer
 #     (터미널 5: ros2 run drone_ros2_advanced keyboard_control ← 상자 위 통과, VM 여유가 있을 때만)
-#     ※ 위치·자세 메시지만 쓰므로 px4_msgs 가 main 이어도 동작한다 (18강 비행 전에는 release/1.16 필수)
+#     ※ 위치·자세 메시지만 쓰므로 px4_msgs 가 main 이어도 동작한다 (18강 비행 전에는 release/1.16 필수,
+#       경로 ③ DistanceSensor 는 release/1.16 기준으로 확인)
 #
 #   파라미터 예:
 #     ros2 run drone_ros2_advanced w10_range_viewer --ros-args -p detail:=true
@@ -47,6 +52,9 @@
 #         → (교수용) ~/w10_range_<시각>.csv 에 0.1초마다 한 줄 — 그래프 데이터
 #     ros2 param set /range_viewer offset 0.17
 #         → 장착 오프셋 = 땅에 앉아 있을 때의 LiDAR 값 (실측값으로 바로 바꿈)
+#     ros2 run drone_ros2_advanced w10_range_viewer --ros-args -p range_source:=px4
+#         → (심화, 경로 ③) LiDAR 칸 = /fmu/out/distance_sensor, 줄에는 'LiDAR(px4)' 로 표시. 브리지(3번) 없이 됨
+#           (실행 중에는 ros2 param set /range_viewer range_source px4 — 되돌리기 bridge)
 #
 #   모의 측정값으로 유효성 검사 보기 (브리지(3번)를 끄고, 새 터미널에서):
 #     ros2 topic pub -r 10 /lidar/down sensor_msgs/msg/LaserScan \
@@ -72,7 +80,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rcl_interfaces.msg import ParameterDescriptor
-from px4_msgs.msg import VehicleAttitude, VehicleLocalPosition
+from px4_msgs.msg import DistanceSensor, VehicleAttitude, VehicleLocalPosition
 from sensor_msgs.msg import LaserScan
 
 from ..px4_base import PX4_QOS   # [FIXED] PX4 전용 QoS 만 가져다 쓴다 (PX4Base 상속은 안 함 → 명령을 보내지 않음)
@@ -85,6 +93,11 @@ LIDAR_OFFSET = 0.18   # 장착 오프셋 [m]: 땅에 앉아 있을 때의 LiDAR 
 PRINT_PERIOD = 0.5    # 한 줄 출력 주기 [s] — 1초면 상자 모서리 같은 좁은 구간을 놓칠 수 있다
 DIFF_SHOW    = 0.15   # '차이' 칸: 상대 고도 − 대지 고도 가 이 값보다 클 때만 표시 [m] (상자 위)
 
+# 원시값 경로 range_source — LiDAR 칸에 어느 길로 받은 원시값을 쓸지 (두 토픽 모두 늘 구독)
+RANGE_TOPIC = {'bridge': '/lidar/down',                 # 경로 ① 브리지 (시뮬레이션 전용, 기본)
+               'px4':    '/fmu/out/distance_sensor'}    # 경로 ③ PX4 거리 센서 메시지 (PX4 다시 빌드, 실제 드론도 같은 길)
+LIDAR_LABEL = {'bridge': 'LiDAR', 'px4': 'LiDAR(px4)'}  # 줄에 찍는 이름 — px4 일 때만 붙여 구분한다
+
 # ── [복붙 영역] 판정 상수 — 복사해 쓰고 원리만 이해 ──────────────
 SCAN_TIMEOUT  = 0.5     # LiDAR 메시지가 이 시간 동안 안 오면 'LiDAR 없음' [s] (18강 노드의 센서 타임아웃과 같은 값)
 PX4_TIMEOUT   = 1.0     # PX4 위치·자세가 이 시간 동안 안 오면 '없음' [s]
@@ -95,8 +108,9 @@ OFFSET_MAX    = 1.0     # offset 파라미터로 받는 최대값 [m] (18 처럼
 DETAIL_WINDOW = 1.0     # detail:=true 일 때 표본을 세는 구간 [s]
 RECORD_PERIOD = 0.1     # CSV 기록 주기 [s] (record:=true, 교수용)
 DIST_BOTTOM_SENSOR_RANGE = 1   # dist_bottom_sensor_bitfield 의 '거리 센서' 칸 (px4_msgs 상수와 같은 값)
+DOWNWARD_FACING = 25           # DistanceSensor.orientation 의 '아래 방향' (px4_msgs 상수 ROTATION_DOWNWARD_FACING 과 같은 값)
 CSV_COLUMNS = ['t', 'north', 'east', 'rel_alt', 'lidar_raw', 'cos_tilt', 'agl_lidar',
-               'dist_bottom', 'db_valid', 'db_bitfield', 'db_reset', 'scan_age']
+               'dist_bottom', 'db_valid', 'db_bitfield', 'db_reset', 'scan_age', 'range_source']
 
 
 def as_bool(value):
@@ -104,6 +118,14 @@ def as_bool(value):
     if isinstance(value, str):
         return value.strip().lower() in ('true', '1', 'yes', 'on')
     return bool(value)
+
+
+def parse_range(value):
+    """range_source 값 → 'bridge' / 'px4', 쓸 수 없는 값이면 None (대문자·앞뒤 빈칸은 봐 준다)"""
+    if not isinstance(value, str):
+        return None
+    name = value.strip().lower()
+    return name if name in RANGE_TOPIC else None
 
 
 def m_text(value):
@@ -124,9 +146,10 @@ def csv_num(value, digits=4):
 
 
 # ── [복붙 영역] 유효성 검사 — 18강 지형 추종 노드와 같은 규칙 ─────
-def lidar_check(r, range_min, range_max, cos_tilt):
+def lidar_check(r, range_min, range_max, cos_tilt, quality=-1):
     """LiDAR 표본 하나 검사 → (이유 코드, 경고 문구). 쓸 수 있는 값이면 (None, '')
-       이유 코드는 '상태가 바뀔 때만 경고' 에 쓴다 (같은 이유가 이어지면 다시 찍지 않음)"""
+       이유 코드는 '상태가 바뀔 때만 경고' 에 쓴다 (같은 이유가 이어지면 다시 찍지 않음)
+       quality = 신호 품질 (경로 ③ 만. 브리지 LaserScan 에는 이 칸이 없어 −1 = 모름)"""
     if math.isnan(r):
         return 'nan', 'LiDAR 측정 무효 (nan)'
     if math.isinf(r):                                # 범위 밖: 너무 멀거나(+inf) 너무 가까움(-inf)
@@ -144,6 +167,8 @@ def lidar_check(r, range_min, range_max, cos_tilt):
         return 'above', f'LiDAR 범위 밖 ({r:.2f} m > 최대 {range_max:.2f} m) — 버림'
     if cos_tilt < COS_MAX_TILT:                      # 많이 기울면 빔이 엉뚱한 곳을 비스듬히 잰다
         return 'tilt', '기울기 45° 넘음 — 측정 무효'
+    if quality == 0:                                 # signal_quality: −1 = 모름(시뮬레이션), 1~100 = 품질 [%] → 통과
+        return 'quality', 'LiDAR 측정 무효 (신호 품질 0 — 센서가 무효 신호로 보고)'
     return None, ''
 
 
@@ -155,18 +180,26 @@ class RangeViewer(Node):
         #    offset : 장착 오프셋 [m]. 0.5초마다 다시 읽음 → ros2 param set 으로 바로 바꿀 수 있음
         #    detail : True 면 줄 끝에 기울기 · 1초 표본 수 · 최장 간격 · 1초 값 범위. 0.5초마다 다시 읽음
         #    record : True 면 CSV 기록 (교수용). 시작할 때만 읽음
+        #    range_source : LiDAR 칸의 원시값 경로 — bridge (/lidar/down, 기본) / px4 (/fmu/out/distance_sensor,
+        #                   경로 ③). 0.5초마다 다시 읽음
         self.declare_parameter('offset', LIDAR_OFFSET, ParameterDescriptor(dynamic_typing=True))
         self.offset = LIDAR_OFFSET
         self._offset_param(log_change=False)      # -p offset:=0.17 로 시작했으면 그 값 (이상한 값이면 기본값)
         self.detail = self._bool_param('detail', False)
         self.record = self._bool_param('record', False)
+        self.declare_parameter('range_source', 'bridge', ParameterDescriptor(dynamic_typing=True))
+        self.range_source = 'bridge'
+        self._range_param(log_change=False)       # -p range_source:=px4 로 시작했으면 그 값 (이상한 값이면 bridge)
 
         # ============================================================
-        # [USER DEFINE] 구독 3개 — 경로 ① 원시값 / 경로 ② 추정값 / 자세 (기울기 보정용)
+        # [USER DEFINE] 구독 4개 — 경로 ① 원시값 / 경로 ③ 원시값 / 경로 ② 추정값 / 자세 (기울기 보정용)
         # ============================================================
         self.create_subscription(
             LaserScan, '/lidar/down', self._scan_callback,
             qos_profile_sensor_data)   # 센서용 QoS(BEST_EFFORT) — 브리지가 어느 방식으로 보내든 받는다
+        self.create_subscription(      # 경로 ③: PX4 를 다시 빌드하지 않았으면 아무것도 안 온다 (그래도 구독은 해 둔다)
+            DistanceSensor, '/fmu/out/distance_sensor',
+            self._distance_callback, PX4_QOS)
         self.create_subscription(
             VehicleLocalPosition, '/fmu/out/vehicle_local_position',
             self._position_callback, PX4_QOS)
@@ -175,8 +208,12 @@ class RangeViewer(Node):
             self._attitude_callback, PX4_QOS)
 
         # ── 상태 변수 (콜백이 채우고 타이머가 읽는다) ─────────────
-        self.scans    = deque(maxlen=500)   # 받은 LiDAR 표본 (받은 시각, r, range_min, range_max) — 최근 몇 초치
-        self.position = None                # 마지막 VehicleLocalPosition
+        # 받은 LiDAR 표본 (받은 시각, r, 최소, 최대, 신호 품질) — 원시값 경로마다 따로, 최근 몇 초치
+        #   두 경로 모두 늘 저장하고, LiDAR 칸·경고에는 지금 고른 경로(range_source)의 표본만 쓴다
+        self.samples  = {'bridge': deque(maxlen=500), 'px4': deque(maxlen=500)}
+        self.orient_logged = False          # '아래 방향이 아닌 거리 센서' 안내를 한 번만 찍기 위한 표시
+        self.other_at = None                # 아래 방향이 아닌 거리 센서 메시지를 마지막으로 받은 시각 [s] (안내 문구용)
+        self.position = None               # 마지막 VehicleLocalPosition
         self.pos_at   = None                # 위치를 받은 시각 [s]
         self.cos_tilt = 1.0                 # 마지막 cos(기울기)
         self.att_at   = None                # 자세를 받은 시각 [s] (None = 아직 못 받음)
@@ -194,7 +231,8 @@ class RangeViewer(Node):
         self.get_logger().info(
             '거리 센서 뷰어 시작 — 날지 않음 (명령을 보내지 않고 받아서 찍기만)\n'
             f'  장착 오프셋 {self.offset:g} m, {PRINT_PERIOD:g}초마다 한 줄, '
-            f'detail={str(self.detail).lower()}, record={str(self.record).lower()}')
+            f'detail={str(self.detail).lower()}, record={str(self.record).lower()}, '
+            f'원시값 경로 {self.range_source} ({RANGE_TOPIC[self.range_source]})')
 
     # ── [복붙 영역] 파라미터 — record:=1 처럼 줘도 받아 준다 (9주차와 같음) ──
     def _bool_param(self, name, default):
@@ -225,15 +263,46 @@ class RangeViewer(Node):
             self.offset = value
         return value
 
+    # ── [복붙 영역] range_source 다시 읽기 — bridge·px4 밖이면 경고 후 이전 값 (18강 노드와 같은 규칙) ──
+    #    log_change=False 는 시작할 때 (__init__) — 그때는 이전 값이 없으므로 'bridge 로 시작' 이라고 찍는다
+    def _range_param(self, log_change=True):
+        raw = self.get_parameter('range_source').value
+        name = parse_range(raw)
+        if name is None:
+            keep = f'이전 값 {self.range_source} 그대로' if log_change else f'{self.range_source} 로 시작'
+            self._range_warn(f'range_source 값 {raw!r} — bridge·px4 중 하나가 아님, {keep}')
+            return self.range_source
+        if name != self.range_source:
+            if log_change:
+                self.get_logger().info(f'원시값 경로 변경: {self.range_source} → {name}')
+                self.warned['scan'] = self.warned['lidar'] = None   # 새 경로로 다시 판정 (없음·무효면 다시 한 줄)
+            self.range_source = name
+        return name
+
+    def _range_warn(self, text):
+        """range_source 경고는 2초에 한 번 (시작할 때와 실행 중이 같은 호출 자리를 써서 함께 묶인다)"""
+        self.get_logger().warn(text, throttle_duration_sec=2.0)
+
     # ============================================================
     # 콜백 — 받은 값을 저장만 한다 (계산·출력은 타이머가)
     # ============================================================
     def _scan_callback(self, msg: LaserScan):
         if not msg.ranges:                      # 빈 메시지는 무시
             return
-        # 하방 라이다는 빔 1개 → ranges[0] 하나만 쓴다
-        self.scans.append((time.monotonic(), float(msg.ranges[0]),
-                           float(msg.range_min), float(msg.range_max)))
+        # 하방 라이다는 빔 1개 → ranges[0] 하나만 쓴다. LaserScan 에는 신호 품질 칸이 없다 → −1 (모름)
+        self.samples['bridge'].append((time.monotonic(), float(msg.ranges[0]),
+                                       float(msg.range_min), float(msg.range_max), -1))
+
+    def _distance_callback(self, msg: DistanceSensor):
+        # 경로 ③ PX4 거리 센서 메시지 — 아래를 보는 센서(25)만 쓴다 (다른 방향은 조용히 무시, 안내는 처음 한 번)
+        if msg.orientation != DOWNWARD_FACING:
+            self.other_at = time.monotonic()    # 값은 쓰지 않고 '왔다'는 것만 적어 둔다 (안내 문구용)
+            if not self.orient_logged:
+                self.orient_logged = True
+                self.get_logger().info(f'아래 방향(25)이 아닌 거리 센서 메시지 무시 (orientation {msg.orientation})')
+            return
+        self.samples['px4'].append((time.monotonic(), float(msg.current_distance),
+                                    float(msg.min_distance), float(msg.max_distance), int(msg.signal_quality)))
 
     def _position_callback(self, msg: VehicleLocalPosition):
         self.position, self.pos_at = msg, time.monotonic()
@@ -261,11 +330,13 @@ class RangeViewer(Node):
         return None
 
     def _lidar_now(self, now, cos_tilt):
-        """마지막 LiDAR 표본 → (r, 받은 지 몇 초, 이유 코드, 경고 문구, 대지 고도). 표본이 없으면 모두 None"""
-        if not self.scans:
+        """지금 고른 경로의 마지막 LiDAR 표본 → (r, 받은 지 몇 초, 이유 코드, 경고 문구, 대지 고도).
+           표본이 없으면 모두 None (경로를 바꾸면 바로 새 경로의 표본을 본다)"""
+        samples = self.samples[self.range_source]
+        if not samples:
             return None, None, None, '', None
-        t, r, range_min, range_max = self.scans[-1]
-        why, why_text = lidar_check(r, range_min, range_max, cos_tilt)
+        t, r, range_min, range_max, quality = samples[-1]
+        why, why_text = lidar_check(r, range_min, range_max, cos_tilt, quality)
         agl = None
         if why is None:
             # ===== [USER DEFINE] 대지 고도 한 줄 — '다리 끝 기준' =====
@@ -306,8 +377,16 @@ class RangeViewer(Node):
         if now - self.start < START_GRACE:         # 시작하고 2초 동안은 경고를 미룸 (토픽이 연결되는 중)
             return
 
-        self._warn_on_change('scan', None if scan_live else 'missing',
-                             'LiDAR 없음 — w10_lidar_bridge(3번) 실행 확인')
+        if self.range_source == 'px4' and self.other_at is not None and now - self.other_at < SCAN_TIMEOUT:
+            # 경로 ③ 메시지는 오는데 아래 방향이 아님 → 다시 빌드가 아니라 기체 문제
+            code, missing = 'not_down', ('LiDAR 없음 — /fmu/out/distance_sensor 는 오지만 아래 방향(25)이 아님: '
+                                         '하방 LiDAR 기체(gz_x500_lidar_down)인가요?')
+        elif self.range_source == 'px4':         # 경로 ③ 이 안 오면 PX4 를 다시 빌드했는지부터
+            code, missing = 'missing', ('LiDAR 없음 — /fmu/out/distance_sensor 가 안 옴: '
+                                        'PX4 dds_topics.yaml 에 추가하고 다시 빌드했나요? (README 10주차 심화)')
+        else:
+            code, missing = 'missing', 'LiDAR 없음 — w10_lidar_bridge(3번) 실행 확인'
+        self._warn_on_change('scan', None if scan_live else code, missing)
         self._warn_on_change('lidar', why if scan_live else None, why_text)
 
         self._warn_on_change('pos', None if pos is not None else 'missing',
@@ -318,11 +397,13 @@ class RangeViewer(Node):
         self._warn_on_change('att', None if att_live else 'missing', '자세 없음 → 기울기 0 으로 봄')
 
     # ============================================================
-    # 0.5초마다 한 줄 — 경로 ① LiDAR → 대지 고도 | 상대 고도 | (차이) | 경로 ② dist_bottom
+    # 0.5초마다 한 줄 — 원시값 LiDAR → 대지 고도 | 상대 고도 | (차이) | 경로 ② dist_bottom
+    #   LiDAR 칸 = range_source 가 고른 경로 (bridge: 경로 ①, px4: 경로 ③ — 줄에 'LiDAR(px4)' 로 표시)
     # ============================================================
     def on_print(self):
         now = time.monotonic()
         self._offset_param()                                     # ros2 param set 을 바로 반영
+        self._range_param()
         self.detail = as_bool(self.get_parameter('detail').value)
         if as_bool(self.get_parameter('record').value) != self.record:
             self.get_logger().warn(
@@ -335,14 +416,15 @@ class RangeViewer(Node):
         scan_live = age is not None and age < SCAN_TIMEOUT
         self._check_states(now, scan_live, why, why_text, pos, att_live)
 
-        # ① 경로 ① 원시값 → 대지 고도 (유효하지 않으면 숫자는 보여 주되 대지 고도는 계산하지 않음)
+        # ① 원시값 → 대지 고도 (유효하지 않으면 숫자는 보여 주되 대지 고도는 계산하지 않음)
+        name = LIDAR_LABEL[self.range_source]                    # 'LiDAR' / 'LiDAR(px4)'
         if not scan_live:
-            lidar_txt = 'LiDAR - → 대지 고도 -'
+            lidar_txt = f'{name} - → 대지 고도 -'
             agl = None
         elif why is None:
-            lidar_txt = f'LiDAR {raw_text(r)} (유효) → 대지 고도 {m_text(agl)}'
+            lidar_txt = f'{name} {raw_text(r)} (유효) → 대지 고도 {m_text(agl)}'
         else:
-            lidar_txt = f'LiDAR {raw_text(r)} (유효하지 않음) → 대지 고도 -'
+            lidar_txt = f'{name} {raw_text(r)} (유효하지 않음) → 대지 고도 -'
         parts = [f'[측정] {lidar_txt}']
 
         # ② 상대 고도 = −z, 상자 위라면 차이 = 상대 고도 − 대지 고도
@@ -368,12 +450,12 @@ class RangeViewer(Node):
     def _detail_parts(self, now, cos_tilt, att_live):
         tilt = f'기울기 {math.degrees(math.acos(cos_tilt)):.0f}°' if att_live else '기울기 -'
         times, values, before = [], [], None
-        for t, r, range_min, range_max in self.scans:          # 오래된 것부터 차례로
+        for t, r, range_min, range_max, quality in self.samples[self.range_source]:   # 오래된 것부터 차례로
             if now - t > DETAIL_WINDOW:
                 before = t                                       # 1초 구간 바로 앞 표본 (첫 간격 계산용)
                 continue
             times.append(t)
-            if lidar_check(r, range_min, range_max, 1.0)[0] is None:   # 범위 안의 값만 (기울기는 따로 표시)
+            if lidar_check(r, range_min, range_max, 1.0, quality)[0] is None:   # 범위 안의 값만 (기울기는 따로 표시)
                 values.append(r)
         stats = f'1초 {len(times)}개'
         seq = ([before] if before is not None else []) + times
@@ -389,6 +471,7 @@ class RangeViewer(Node):
     #   t 노드 시작 뒤 시간 [s] · north/east/rel_alt 위치·상대 고도 [m] · lidar_raw 원시값 [m]
     #   cos_tilt · agl_lidar 대지 고도 [m] (유효하지 않으면 빈칸) · dist_bottom [m] · db_valid 1/0
     #   db_bitfield · db_reset · scan_age 마지막 LiDAR 를 받은 지 몇 초 [s] (0.5 넘으면 오래된 값)
+    #   range_source 그 줄의 원시값 경로 (bridge / px4) — lidar_raw·agl_lidar·scan_age 가 이 경로의 값
     # ============================================================
     def _open_record(self):
         path = os.path.expanduser(time.strftime('~/w10_range_%Y%m%d_%H%M%S.csv'))
@@ -419,7 +502,7 @@ class RangeViewer(Node):
                     int(pos.dist_bottom_sensor_bitfield), int(pos.dist_bottom_reset_counter)]
         else:
             row += ['', '', '', '']
-        row.append(csv_num(age, 3))
+        row += [csv_num(age, 3), self.range_source]
         self.csv.writerow(row)
         self.csv_file.flush()            # Ctrl+C 로 끝내도 그때까지는 남게
         self.csv_rows += 1

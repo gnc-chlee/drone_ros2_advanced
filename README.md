@@ -286,7 +286,7 @@ ros2 param set /person_follow_base kp_fwd 6.0                                   
 ## 10주차 거리 센서 · LiDAR 지형 추종 (17·18강)
 드론 아래를 보는 **거리 센서(distance sensor)** — 빔 1개짜리 하방 **라이다(LiDAR)** — 로 바로 아래 면까지의 거리를 재고(17강), 그 값으로 높이 1 m 상자를 넘으며 대지 고도를 지키는 노드 `w10_terrain_follow` 를 실행합니다(18강, PX4Base).
 - 높이 두 가지: **상대 고도(relative altitude)** = 이륙 지점 기준 높이(NED `−z` — 2·6·9주차의 '고도') / **대지 고도(AGL, above ground level)** = 바로 아래 면(땅·상자 윗면)까지의 높이 = LiDAR − **장착 오프셋(mounting offset)** 약 0.18 m (계산). 평지에서는 둘이 같고, 상자 위에서는 대지 고도만 1 m 줄어듭니다
-- 거리 값이 ROS2 로 오는 **두 경로** (PX4 v1.16.0 기본 설정에는 `/fmu/out/distance_sensor` 가 없음): ① 브리지 `w10_lidar_bridge` → `/lidar/down` (`sensor_msgs/LaserScan`, **원시값**, `ranges[0]`) / ② PX4 `/fmu/out/vehicle_local_position` 의 `dist_bottom` (EKF **추정값** — 값보다 `dist_bottom_valid` 를 먼저 확인)
+- 거리 값이 ROS2 로 오는 **두 경로** (PX4 v1.16.0 기본 설정에는 `/fmu/out/distance_sensor` 가 없음): ① 브리지 `w10_lidar_bridge` → `/lidar/down` (`sensor_msgs/LaserScan`, **원시값**, `ranges[0]`) / ② PX4 `/fmu/out/vehicle_local_position` 의 `dist_bottom` (EKF **추정값** — 값보다 `dist_bottom_valid` 를 먼저 확인). PX4 를 다시 빌드해 `/fmu/out/distance_sensor` 를 여는 경로 ③ 은 아래 3) 심화
 - 18강 고도 한 줄은 9주차와 같은 비례 제어 `vz = kz × (높이 − 목표)` 에서 **높이만 상대 고도 → 대지 고도로** 바꾼 것입니다(**지형 추종, terrain following**). 기본값은 **드라이 런(dry run)** + 전진 속도 0(제자리) — 비행하려면 `-p fly:=true` 를 일부러 붙입니다
 
 ### 0) 준비 (한 번만)
@@ -315,7 +315,7 @@ ros2 run drone_ros2_advanced w10_range_viewer
 ros2 run drone_ros2_advanced keyboard_control
 ```
 - 확인 명령 (새 터미널)
-  - `ros2 topic list | grep distance` → `/fmu/in/distance_sensor`, `/fmu/in/obstacle_distance` 두 줄뿐 (둘 다 in = 내가 PX4 에 넣는 쪽 — PX4 가 내보내는 out 은 없음)
+  - `ros2 topic list | grep distance` → `/fmu/in/distance_sensor`, `/fmu/in/obstacle_distance` 두 줄뿐 (둘 다 in = 내가 PX4 에 넣는 쪽 — PX4 가 내보내는 out 은 없음). 뷰어(터미널 4)를 켠 뒤에는 `/fmu/out/distance_sensor` 한 줄이 더 보이는데, 뷰어가 3) 심화의 경로 ③ 자리로 **구독만 해 둔 이름**입니다 — `ros2 topic info /fmu/out/distance_sensor` 의 `Publisher count: 0` (PX4 는 보내지 않음, `Subscription count` 가 뷰어)
   - 경로 ①: `ros2 topic echo --once /lidar/down` → `range_min: 0.1` · `range_max: 100.0` · `ranges:` 에 0.18 근처 한 칸 (빔 1개라 `angle_increment` 는 nan 일 수 있음). 발행 주기: `ros2 topic hz -w 50 /lidar/down` (약 50 Hz)
   - 경로 ②: `ros2 topic echo /fmu/out/vehicle_local_position --field dist_bottom` (Ctrl+C 로 멈춤) — 같은 방법으로 `dist_bottom_valid`(믿어도 되는가), `dist_bottom_sensor_bitfield`(1 = 거리 센서로 추정)
 - 뷰어 로그 검산 (숫자는 계산 예 — 내 화면과 비교)
@@ -365,7 +365,7 @@ ros2 topic pub -r 10 /lidar/down sensor_msgs/msg/LaserScan "{range_min: 0.1, ran
 - 계단 응답(step response, 계산): `target_agl 3.0` → 처음 약 1초는 포화(0.5 m/s), 그 뒤로 점점 천천히 — 약 2.6초에 2.9 m. 상자에 올라서는 순간도 같은 모양(대지 고도가 한순간 1 m 줄어드는 계단 입력)
 
 **비행 중에 바꾸기** — 0.1초마다 다시 읽으므로 착륙하지 않고 바로 바뀝니다(바뀌면 `게인 변경: kz 1 → -1` · `목표 대지 고도 변경: 2 → 3` · `전진 속도 변경: 0 → 0.3` · `고도 기준 변경: lidar → ned` 같은 한 줄)
-- `kz` (기본 1.0) · `target_agl` (기본 2.0, 1.8~3.5 m 만 받음) · `cruise_speed` (기본 0.0, 최대 ±0.5 m/s, 음수 = 서쪽으로 되돌아오기) · `alt_source` = **고도 기준(height reference)**: `lidar`(기본, 경로 ① 원시값 − 장착 오프셋) / `ekf`(경로 ② `dist_bottom` − 장착 오프셋) / `ned`(상대 고도 — 9주차와 같음). 범위 밖·철자 오류는 경고 후 이전 값 유지. `fly` 는 시작할 때만
+- `kz` (기본 1.0) · `target_agl` (기본 2.0, 1.8~3.5 m 만 받음) · `cruise_speed` (기본 0.0, 최대 ±0.5 m/s, 음수 = 서쪽으로 되돌아오기) · `alt_source` = **고도 기준(height reference)**: `lidar`(기본, 경로 ① 원시값 − 장착 오프셋. `range_source px4` 면 경로 ③ 원시값 — 3) 심화) / `ekf`(경로 ② `dist_bottom` − 장착 오프셋) / `ned`(상대 고도 — 9주차와 같음). 범위 밖·철자 오류는 경고 후 이전 값 유지. `fly` 는 시작할 때만
 
 **일부러 틀리기**
 - 9주차 방식으로 되돌리기: 코스 끝(평지)에서 `ros2 param set /terrain_follow_base alt_source ned` → `cruise_speed -0.3` 으로 되돌아오며 상자 통과 → 상대 고도 2 m 그대로라 상자 위 대지 고도는 1 m (상자를 못 보는 고도 유지). 되돌리기 `alt_source lidar`
@@ -396,6 +396,81 @@ ros2 topic pub -r 10 /lidar/down sensor_msgs/msg/LaserScan "{range_min: 0.1, ran
 | 이륙 뒤 앞으로 안 감 | 1단계 그대로(`cruise_speed` 0) / 코스 끝 / 신호 없음 상태 → `cruise_speed 0.3` (코스 끝에서 되돌아오려면 `-0.3`) |
 | `ros2 param set` 이 노드를 못 찾음 / 값이 안 먹음 | 노드 이름 오타 / `alt_source` 철자 / `target_agl` 범위 밖 → `ros2 node list` 에서 `/terrain_follow_base`, `lidar`·`ned`·`ekf`, 1.8~3.5 m |
 | 키보드 W 로 갔는데 상자를 비켜 감 / 키 반응 없음 | 기수가 동쪽이 아님 / 다른 창에 포커스 → 원점에서 다시 이륙 / 키보드 터미널 클릭 |
+
+### 3) 심화 — 경로 ③: PX4 가 거리 센서 값을 직접 내보내게 하기 (실제 드론에서 쓰는 길)
+**수업은 이 절 없이도 됩니다** — 두 노드의 기본값이 `range_source:=bridge`(경로 ① 브리지)라서 17·18강 명령은 그대로 동작합니다. 원시값을 PX4 쪽 길로도 받아 보고 싶은 사람을 위한 심화입니다.
+
+- **왜**: 브리지(`w10_lidar_bridge`)는 Gazebo 토픽을 ROS2 로 옮기는 **시뮬레이션 전용** 길입니다. 실제 드론에는 Gazebo 가 없고, LiDAR 가 비행 컨트롤러(PX4)에 바로 연결됩니다. 그래서 실제 기체에서 ROS2 로 **원시값(raw measurement)** 을 받으려면 PX4 가 `distance_sensor` 를 ROS2 로 내보내도록 설정해야 합니다 (경로 ② `dist_bottom` 은 실제 기체에서도 되지만 EKF **추정값**)
+- **주의**: PX4 **소스 파일을 고치고 다시 빌드**합니다 → 고정 환경(PX4 v1.16.0 원본)에서 벗어납니다. VM 에서 다시 빌드에 수 분 걸립니다. 끝나면 아래 '되돌리기'로 원본으로 돌릴 수 있습니다. px4_msgs 는 `release/1.16`([6주차 절](#6주차-시작-전에-한-번만--px4_msgs-버전-맞추기))에서 확인한 값입니다 — main 이면 먼저 전환
+
+| 경로 | 토픽 | 값 | 실제 드론 | 준비 |
+|------|------|----|-----------|------|
+| ① 브리지 | `/lidar/down` (`sensor_msgs/LaserScan`) | 원시값 | 안 됨 (시뮬레이션 전용) | `w10_lidar_bridge` 실행 |
+| ② EKF | `/fmu/out/vehicle_local_position` 의 `dist_bottom` | 추정값 | 됨 | 없음 (기본 목록에 있음) |
+| ③ PX4 거리 센서 | `/fmu/out/distance_sensor` (`px4_msgs/DistanceSensor`) | 원시값 | 됨 | PX4 설정 파일에 두 줄 + 다시 빌드 |
+
+**1단계 — PX4 내보내기 목록(`dds_topics.yaml`)에 두 줄 넣기** (PX4 를 Ctrl+C 로 끈 상태에서)
+```bash
+nano ~/PX4-Autopilot/src/modules/uxrce_dds_client/dds_topics.yaml
+#   Ctrl+W → home_position 입력 → Enter 로 찾아감
+#   publications: 목록의 맨 끝 = /fmu/out/home_position 항목 아래 (subscriptions: 줄보다 위) 에 빈 줄 하나 + 아래 두 줄
+#   Ctrl+O → Enter (저장) → Ctrl+X (나가기)
+```
+넣을 두 줄 — 들여쓰기는 **스페이스로(Tab 금지)**, 위 항목들과 똑같이 `-` 앞 2칸 · `type` 앞 4칸:
+```yaml
+  - topic: /fmu/out/distance_sensor
+    type: px4_msgs::msg::DistanceSensor
+```
+- 확인: `grep -n -A1 "distance_sensor" ~/PX4-Autopilot/src/modules/uxrce_dds_client/dds_topics.yaml` → 원래 있던 `/fmu/in/distance_sensor` 와 새 `/fmu/out/distance_sensor` 두 군데가 보이면 OK
+- 토픽 이름에 `_v1` 이 붙지 않습니다 (PX4 v1.16.0 의 `msg/DistanceSensor.msg` — px4_msgs `release/1.16` 도 같음 — 에 `MESSAGE_VERSION` 이 없음) — 위 이름 그대로
+
+**2단계 — 다시 빌드하고 확인** (터미널 1·2·4 — 브리지(3번)는 필요 없음)
+```bash
+# 터미널 1: 남은 Gazebo 서버 정리 → 실행하면 바뀐 목록 때문에 PX4 가 자동으로 다시 빌드 (VM 에서 수 분, pxh> 가 뜨면 끝)
+pkill -9 -f "gz sim"
+cd ~/PX4-Autopilot && PX4_GZ_WORLD=lidar_world make px4_sitl gz_x500_lidar_down
+# 터미널 2: uXRCE-DDS Agent — 경로 ③ 은 Agent 를 거쳐 오므로 필수
+MicroXRCEAgent udp4 -p 8888
+# 새 터미널: 토픽 확인
+ros2 topic info /fmu/out/distance_sensor                            # Publisher count: 1 = PX4 가 내보내는 중 (0 이거나 Unknown topic 이면 다시 빌드 안 됨)
+ros2 topic echo /fmu/out/distance_sensor --field current_distance   # 땅에서 약 0.18 (Ctrl+C 로 멈춤)
+# 터미널 4: 측정 뷰어 — 브리지 없이
+ros2 run drone_ros2_advanced w10_range_viewer --ros-args -p range_source:=px4
+```
+- 뷰어 시작 로그에 `원시값 경로 px4 (/fmu/out/distance_sensor)` → 측정 줄은 `LiDAR(px4)` 로 구분됩니다: `[측정] LiDAR(px4) 0.18 m (유효) → 대지 고도 0.00 m | 상대 고도 0.00 m | dist_bottom 0.18 m (유효, 거리 센서)` (계산 예). 기본값(bridge)일 때는 17강 그대로 `LiDAR 0.18 m`
+- `-p record:=true` CSV 는 맨 끝 열 `range_source` 에 어느 경로의 값인지 남습니다 (앞쪽 열은 그대로)
+- **비행 중에 바꾸기**: 2) 18강 순서대로 브리지로 비행하다가 새 터미널에서 `ros2 param set /terrain_follow_base range_source px4` → `원시값 경로 변경: bridge → px4` 한 줄 뒤 `[CRUISE] … 대지 고도 1.95 m (LiDAR(px4) 2.13 m, 기울기 1°) …` (계산 예). 같은 Gazebo LiDAR 를 PX4 가 받아 내보낸 값이라 브리지 값과 거의 같아야 정상입니다. 되돌리기 `range_source bridge`. 처음부터 쓰려면 `ros2 run drone_ros2_advanced w10_terrain_follow --ros-args -p fly:=true -p range_source:=px4`
+- 두 노드는 두 경로를 **늘 함께 구독**하고, **고른 경로의 값만** 대지 고도·신호 없음 판정·복구 판정에 씁니다 → 브리지를 켜 둔 채 px4 로 바꿔도 됩니다. 고른 경로의 값이 안 오면 신호 없음 규칙 그대로(0.5초 → 상대 고도 유지·전진 정지, 유효한 값이 1.0초 이어지면 복구)
+- 늘 구독하므로 두 노드 중 하나라도 켜져 있으면 **다시 빌드하지 않아도** `ros2 topic list` 에 `/fmu/out/distance_sensor` 이름이 보입니다(구독만 해 둔 이름). PX4 가 실제로 보내는지는 목록이 아니라 `ros2 topic info /fmu/out/distance_sensor` 의 `Publisher count`(1 = 보내는 중) 또는 `ros2 topic echo --once` 로 확인합니다
+- 0단계 모의 측정값(`ros2 topic pub /lidar/down …`)은 bridge 경로용입니다 — 드라이 런은 기본값(bridge)으로
+
+**`px4_msgs/DistanceSensor` 메시지에서 보는 칸** (`ros2 topic echo --once /fmu/out/distance_sensor`)
+
+| 칸 | 뜻 | 시뮬레이션 값 |
+|----|----|---------------|
+| `current_distance` | 측정 거리 [m] — 원시값 (기울기 보정 전) | 땅 약 0.18 |
+| `min_distance` · `max_distance` | 측정 범위 [m] — 브리지의 `range_min` · `range_max` 와 같은 역할 | 0.1 · 100.0 |
+| `orientation` | 센서가 보는 방향 — `25` = 아래 (`ROTATION_DOWNWARD_FACING`) | 25 |
+| `signal_quality` | 신호 품질 — `-1` = 모름, `0` = 무효 신호, 1~100 = 품질 (클수록 좋음) | −1 (시뮬레이션은 늘 −1) |
+| `type` | 센서 종류 — `0` = 레이저 | 0 |
+
+- 노드의 유효성 검사는 브리지와 같고(`current_distance` 를 `min_distance`~`max_distance` 로 검사 — inf·nan·범위 밖·경계값·45° 넘게 기운 값은 버림) **두 가지가 더 있습니다**: `signal_quality` 가 `0` 이면 버림(`신호 품질 0 — 센서가 무효 신호로 보고`, −1 과 1~100 은 통과) · `orientation` 이 25 가 아닌 메시지(예: 전방 LiDAR)는 조용히 무시(처음 한 번만 `아래 방향(25)이 아닌 거리 센서 메시지 무시 (orientation 0)`)
+
+**되돌리기** (고정 환경 원본으로)
+```bash
+cd ~/PX4-Autopilot && git checkout src/modules/uxrce_dds_client/dds_topics.yaml
+make px4_sitl     # 다시 빌드만 (수 분) — 이후 /fmu/out/distance_sensor 는 사라짐, 노드는 range_source 기본값(bridge)으로
+```
+- 고친 상태인지 모를 때: `cd ~/PX4-Autopilot && git status --short src/modules/uxrce_dds_client/` → `M …/dds_topics.yaml` 이 보이면 고친 상태, 아무것도 안 나오면 원본
+
+**교수 VM 실측** (두 줄 추가 → 다시 빌드 → 호버링 중): `current_distance` 4.93 · `min_distance` 0.1 · `max_distance` 100.0 · `orientation` 25 · `signal_quality` −1 · `variance` 0 · `type` 0. 같은 때 QGC 고도 4.8 m ≈ 4.93 − 0.18 = 4.75 → LiDAR 원시값에서 장착 오프셋을 빼면 고도와 맞습니다
+
+| 증상 | 원인 → 해결 |
+|------|-------------|
+| `ros2 topic info /fmu/out/distance_sensor` 가 `Publisher count: 0` 또는 `Unknown topic` / 값이 안 옴 / 노드 경고 `LiDAR 없음 — /fmu/out/distance_sensor 가 안 옴: PX4 dds_topics.yaml 에 추가하고 다시 빌드했나요? (README 10주차 심화)` (`topic list` 에 이름이 보여도 노드가 구독만 해 둔 것일 수 있음) | 두 줄 추가 뒤 다시 빌드 안 함 / Agent 미실행 / 거리 센서 없는 기체 → 1단계 `grep` 으로 두 줄 확인, PX4 다시 실행(빌드 로그가 지나가는지), 터미널 2 Agent, 기체 이름 `gz_x500_lidar_down` 확인 |
+| 노드 경고 `LiDAR 없음 — /fmu/out/distance_sensor 는 오지만 아래 방향(25)이 아님: 하방 LiDAR 기체(gz_x500_lidar_down)인가요?` | 전방 LiDAR 기체(`gz_x500_lidar_front`) — 그 전에 `아래 방향(25)이 아닌 거리 센서 메시지 무시 (orientation …)` 한 줄이 먼저 나옴 → `pkill -9 -f "gz sim"` 뒤 `gz_x500_lidar_down` 으로 다시 |
+| 다시 빌드가 YAML 오류로 멈춤 | Tab 문자 / 칸 수 틀림 → nano 에서 두 줄을 지우고 스페이스로 다시 (`-` 앞 2칸, `type` 앞 4칸) |
+| `range_source` 를 바꿔도 그대로 | 철자 → `bridge` · `px4` 둘 중 하나 (그 밖은 경고 후 이전 값 유지) |
 
 ## 4주차 커스텀 World
 ```bash
