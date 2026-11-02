@@ -190,6 +190,27 @@ cd ~/PX4-Autopilot && HEADLESS=1 PX4_GZ_WORLD=person_world make px4_sitl gz_x500
 - 걸은 거리만큼 다리를 움직이므로, 멈춘 동안에는 걷던 자세 그대로 서 있습니다
 - 강사 점검용 `person_check_world.sdf`: 사람이 3·4·5·6·8 m 에서 드론을 보고 10초씩 정지 (거리별 신뢰도 측정). 사진 입간판(`models/sjcu_person_board`, Plan B)도 주석을 풀어 비교
 
+## 11주차 기둥 월드 (obstacle_world.sdf)
+
+19·20강(2D LiDAR 장애물 감지·회피)용. 땅 + 해 + 기둥 1개 + 남쪽 벽 1개 + 목표 표시뿐인 월드입니다 (Fuel 불필요).
+
+```bash
+cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+cp obstacle_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+cd ~/PX4-Autopilot && PX4_GZ_WORLD=obstacle_world make px4_sitl gz_x500_lidar_2d
+```
+
+| 모델 | `<pose>` (ENU) | 크기 (x·y·z) | 범위 |
+|------|------|------|------|
+| `pillar` (기둥) | 6.0 0 2.0 | 1 × 1 × 4 m | 동 5.5~6.5, 북 −0.5~0.5 |
+| `south_wall` (남쪽 벽) | 7.5 −3.1 2.0 | 11 × 0.2 × 4 m | 동 2~13, 북쪽 면 = 북 −3.0 |
+| `goal_pad` (목표 표시) | 12.0 0 0.005 | 1 × 1 × 0.01 m | 스캔 평면보다 낮아 LiDAR 에 안 보임 |
+
+- 드론은 원점에서 동쪽을 봄 → 동쪽으로 곧장 가면 기둥에 막히고, 왼쪽(북쪽)이 넓어 왼쪽으로 돌아감. 기둥과 벽 사이 2.5 m 라 오른쪽으로 돌아가도 지나갈 수는 있음 (20강 `v_side -0.3` 일부러 틀리기)
+- 높이 4 m 는 2D LiDAR 스캔 평면(상대 고도 2 m 에서 땅 위 약 2.3 m)보다 충분히 높게 — 평면보다 낮은 물체(10주차 1 m 상자)는 2D LiDAR 에 안 보입니다
+- 스폰 위치의 섹터 값 (계산): 앞 5.38 m (기둥) · 왼쪽 자유 공간 · 오른쪽 3.54 m (벽 서쪽 끝 모서리)
+- 7강 `walls` 월드(PX4 내장)는 벽 폭이 20 m 라 돌아가기에 길어서 이 월드를 따로 만들었습니다
+
 ## 자주 나는 오류
 
 | 증상 | 원인 | 해결 |

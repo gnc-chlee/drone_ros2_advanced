@@ -118,7 +118,7 @@ ros2 run drone_ros2_advanced w03_mission_raw --ros-args -p waypoint_file:=$(ros2
 | 8주차 | OpenCV DNN 기반 객체 인식 / 사람 인식 노드 | `w08_dnn_demo` (13강: 사진·웹캠으로 DNN 4단계) / `w08_person` + `w08_video_pub`, `worlds/person_world.sdf` (14강: 영상 → 드론 정면 카메라에서 사람 찾기 → `/sjcu/person_error`) (참고: `w08_face_detector` Haar 원형) |
 | 9주차 | 사람 인식·추종 비행 제어 설계 / 추종 비행 실습 | `w09_follow` (+ 14강 구성 그대로: `w05_camera_bridge`·`w08_person`·`person_world`) — 15강: 드라이 런(비행하지 않고 명령 값만 확인) / 16강: 회전만 → 비행 중에 전진 속도 켜기(단계적 통합, incremental integration) |
 | 10주차 | 거리 센서 개념과 ROS2 토픽 연동 / LiDAR 고도 데이터 활용 실습 | `w10_lidar_bridge` + `w10_range_viewer`, `worlds/lidar_world.sdf` (17강: 하방 LiDAR 거리를 두 경로 — 브리지 원시값 `/lidar/down` · PX4 추정값 `dist_bottom` — 로 읽고 대지 고도 확인) / `w10_terrain_follow` (18강: 드라이 런 → 제자리 고도 유지 → 비행 중에 전진 속도 켜기로 상자 넘기 = 지형 추종, terrain following) |
-| 11주차 | 장애물 감지 원리 / 회피 비행 노드 | (추가 예정) |
+| 11주차 | 장애물 감지 원리와 회피 전략 / 회피 비행 노드 실습 | `w11_scan_bridge` + `w11_scan_viewer`, `worlds/obstacle_world.sdf` (19강: 2D LiDAR 스캔 1080칸 → 앞·왼쪽·오른쪽 섹터 최근접 거리, 정지 거리) / `w11_avoid` (20강: 드라이 런 → 제자리 호버 → 비행 중에 전진 켜기로 기둥 앞 정지 → 넓은 쪽 좌우 이동 → 코스 복귀 → 도착 = 반응형 회피, reactive avoidance) |
 | 12주차 | 상태머신 기반 미션 설계 / 모드 전환 로직 | (추가 예정) |
 | 13주차 | 통합 시나리오 설계 / 통합 미션 구현·디버깅 | `w13_stable_raw` / `w13_stable_base` |
 | 14주차 | 통합 미션 시연 / 심화 주제 소개 (RL, YOLO) | `w14_yolo`, `w14_haar_vs_yolo` |
@@ -474,6 +474,123 @@ make px4_sitl     # 다시 빌드만 (수 분) — 이후 /fmu/out/distance_sens
 | 다시 빌드가 YAML 오류로 멈춤 | Tab 문자 / 칸 수 틀림 → nano 에서 두 줄을 지우고 스페이스로 다시 (`-` 앞 2칸, `type` 앞 4칸) |
 | `range_source` 를 바꿔도 그대로 | 철자 → `bridge` · `px4` 둘 중 하나 (그 밖은 경고 후 이전 값 유지) |
 
+## 11주차 2D LiDAR 장애물 감지 · 회피 비행 (19·20강)
+앞을 보는 **2D 라이다(2D LiDAR)** — 한 평면 270° 를 1080칸으로 재는 LiDAR — 로 장애물을 찾고(19강), 기둥을 피해 동쪽 12 m 목표까지 가는 **반응형 회피(reactive avoidance)** 노드 `w11_avoid` 를 실행합니다(20강, PX4Base).
+- 스캔 읽기: `i번째 칸 각도 = angle_min + i × angle_increment` — 각도 + = 왼쪽(반시계, REP 103), **0번 칸 = 오른쪽 뒤 −135°**, 정면 ≈ 540번, 바로 뒤 90° 는 **사각지대(blind spot)**. 10주차처럼 `ranges[0]` 을 그대로 쓰면 오른쪽 뒤를 봅니다
+- 1080칸 → **섹터 최근접 거리(nearest obstacle distance)** 3개: 앞 ±30° · 왼쪽 +30~+90° · 오른쪽 −90~−30°. **같은 inf, 다른 뜻**: 10주차 하방은 `+inf` = 범위 밖(무효)이지만 2D 스캔의 `+inf` = **자유 공간(free space)** (그 방향 30 m 안에 장애물 없음). 섹터에 쓸 값이 하나도 없으면 측정 없음 = 막힘. 0.4 m 안 값은 자기 기체로 보고 버림
+- 20강 규칙(VFH 3섹터판): 앞 1.5 m 미만 → 정지 → 넓은 쪽으로 **좌우 이동(lateral movement)** (동점이면 오른쪽) → 앞이 2.0 m 넘게 비면 전진 → 옆·뒤 대각선이 비면 코스 복귀 → 도착. **PX4 충돌 방지(Collision Prevention)는 Position 모드에서 사람이 조종할 때만 동작하고 Offboard 에서는 동작하지 않음** → 같은 원리를 노드가 직접 합니다. 기본값은 **드라이 런** + 전진 속도 0(제자리) — 비행하려면 `-p fly:=true`
+- 부호: 스캔 각도 + = 왼쪽 ↔ `send_velocity_body` 의 `vy_body` + = 오른쪽(**몸체 좌표계(body frame, FRD)**) → 왼쪽 좌우 이동 = `vy_body` 음수
+
+### 0) 준비 (한 번만)
+```bash
+# 기둥 월드를 PX4 폴더로 복사 — 기둥 1개(동쪽 6 m, 1×1×4 m) + 남쪽 벽 1개 + 목표 표시(동쪽 12 m), Fuel·인터넷 불필요
+cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+cp obstacle_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+```
+- 기체는 PX4 내장 **`gz_x500_lidar_2d`** — 카메라 없음, 수평 2D LiDAR 1개(270° · 1080칸 · 각도 분해능 0.25° · 0.1~30 m · 30 Hz). 10주차 `gz_x500_lidar_down` 을 띄우면 앞을 못 봅니다 (브리지가 `[경고] 하방 LiDAR 기체` 를 띄움)
+- 2D LiDAR 렌더링은 10주차 하방 1빔보다 무겁습니다 → VM 이 버거우면 PX4 명령 앞에 `HEADLESS=1`. 19강 필수(땅 값 읽기·계산)와 20강 0단계 드라이 런은 비행 없이 됩니다
+- 20강 비행 전에는 **`release/1.16` 필수** ([6주차 절](#6주차-시작-전에-한-번만--px4_msgs-버전-맞추기))
+
+### 1) 19강 — 스캔 읽기와 섹터 (비행 없음, 키보드 비행은 선택)
+```bash
+# 터미널 1: 2D LiDAR 기체 + 기둥 월드 (VM 이 버거우면 앞에 HEADLESS=1)
+cd ~/PX4-Autopilot && PX4_GZ_WORLD=obstacle_world make px4_sitl gz_x500_lidar_2d
+# 터미널 2: uXRCE-DDS Agent (뷰어의 위치·전진 속도용 — 없어도 스캔은 보임)
+MicroXRCEAgent udp4 -p 8888
+# 터미널 3: pxh> 가 뜬 뒤에 스캔 브리지 — [감지] world=obstacle_world model=x500_lidar_2d_0 → /lidar/scan 줄 확인
+ros2 run drone_ros2_advanced w11_scan_bridge
+# 터미널 4: 스캔 뷰어 — 비행하지 않음 (받아서 0.5초마다 한 줄 찍기만)
+ros2 run drone_ros2_advanced w11_scan_viewer
+# 터미널 5 (선택): 2주차 키보드로 기둥 앞까지 — T 이륙 → 약 2 m 에서 Space → W 한 번(동쪽 0.5 m/s) → 판단 칸이 '정지 판단'이 되면 Space → A(왼쪽)
+ros2 run drone_ros2_advanced keyboard_control
+```
+- 확인 명령: `ros2 topic echo /lidar/scan --once --no-arr` → `angle_min: -2.356…` · `angle_increment: 0.00436…` · `range_min: 0.1` · `range_max: 30.0` · `ranges: '<sequence type: float, length: 1080>'`. 정면 칸 = (0 − angle_min) ÷ angle_increment ≈ 539.5. 발행 주기: `ros2 topic hz /lidar/scan` (약 30 Hz — VM 이 느리면 그만큼 낮음)
+- 뷰어 로그 검산 (계산 예 — 내 화면과 비교)
+  - 땅: `[스캔] 1080칸 | 정면 1칸(540) 5.38 m | 앞 5.38 · 왼쪽 자유 공간 · 오른쪽 3.54 m | 버림 0칸 | 판단: 전진` — 앞 5.38 = 기둥 서쪽 면(동 5.5) − 센서 위치(기체 중심 앞 0.12 m), 오른쪽 3.54 = 남쪽 벽 서쪽 끝 모서리까지. 정면 칸 번호는 반올림에 따라 539 로 찍힐 수도 있음(둘 다 정면에서 0.125°)
+  - 기둥 앞에서 왼쪽으로 0.6 m 옮긴 곳: `[스캔] 1080칸 | 정면 1칸(540) 자유 공간 | 앞 1.38 · … | 판단: 정지 판단` — 정면 1칸은 기둥 북쪽 면 바깥을 지나 자유 공간인데, 기체 오른쪽 끝은 아직 기둥 앞 (1칸 = 폭 0인 선 → 기체 폭을 못 봄)
+  - 키보드로 다가가면: `[정지 판단] 앞 1.50 m 통과 | 전진 0.50 m/s` → 멈추면 `[멈춤] 앞 0.94 m | 판단 뒤 1.5 s · 0.54 m 이동` = 알아채고 멈출 때까지 간 거리 = **정지 거리(stopping distance)** = 공주 거리 + 제동 거리. 19강 표의 0.5 m/s 칸(0.50 m)과 비교
+  - 판단 칸: 전진(앞 3.0 m 이상) · 감속(3.0 m 안) · 정지 판단(1.5 m 안) · 근접(앞 ±45° 1.0 m 안) — 20강 노드와 같은 기준. `-inf` 칸·자기 기체 영역(0.4 m 안) 칸이 생기면 상태가 바뀔 때만 경고 한 줄
+- 뷰어 파라미터: `ros2 param set /scan_viewer front_deg 1.0` (앞 섹터를 ±1° 로 — 정면 1칸과 비슷해짐) · `stop_dist` (정지 판단 거리, 판단 칸 기준이 같이 바뀜) · `-p record:=true` (`~/w11_scan_<시각>.csv` 에 0.1초마다 한 줄 — 그래프용)
+- 선택: `PX4_GZ_WORLD=walls` (7강 월드 — PX4 문서가 충돌 방지 시험에 쓰는 월드)로 띄워 뷰어 비교. 브리지는 월드를 자동 감지 (월드를 바꿀 때는 `pkill -9 -f "gz sim"` 먼저)
+
+### 2) 20강 — 회피 비행 (터미널 1·2·3·5)
+```bash
+# 터미널 1·2·3: 19강과 같음 (브리지는 pxh> 뒤, 0단계 드라이 런에서는 끈다)
+# 터미널 5: 회피 노드 — 단계별로
+ros2 run drone_ros2_advanced w11_avoid --ros-args -p cruise_speed:=0.5   # 0단계: 드라이 런 (아래 모의 스캔과 함께, PX4 없이도 됨)
+ros2 run drone_ros2_advanced w11_avoid --ros-args -p fly:=true           # 1단계: 이륙 → 제자리 호버 (전진 속도 기본 0)
+ros2 param set /avoid_base cruise_speed 0.5                              # 2단계: 비행 중에 전진 켜기 → 기둥 피해 동쪽 12 m 도착
+```
+- 4번 자리는 뷰어(선택). **키보드 노드와 회피 노드는 함께 켜지 않습니다** (Offboard 명령이 섞임)
+
+**0단계 드라이 런 — 세 칸 모의 스캔** (땅, 브리지(3번)는 끄고): 새 터미널에서 `ranges` 만 바꿔 가며 **위에서부터 차례로** 발행합니다. 칸 3개 = −60° · 0° · +60° = **오른쪽 · 앞 · 왼쪽**, `.inf` = 자유 공간
+```bash
+ros2 topic pub -r 10 /lidar/scan sensor_msgs/msg/LaserScan "{angle_min: -1.0472, angle_increment: 1.0472, range_min: 0.1, range_max: 30.0, ranges: [2.0, 1.2, .inf]}"
+```
+
+| `ranges` (오른쪽 · 앞 · 왼쪽) | 판단 (로그 태그) | vx · vy [m/s] (vy − = 왼쪽) |
+|------|------|------|
+| `[2.0, 5.0, .inf]` | 전진 | +0.50 · 0.00 |
+| `[2.0, 2.25, .inf]` | 감속 = 0.33 × (2.25 − 1.5) | +0.25 · 0.00 |
+| `[2.0, 1.2, .inf]` | 정지 → 왼쪽 좌우 이동 | 0.00 · −0.30 |
+| `[.inf, 1.2, 2.0]` | 왼쪽 유지 (오른쪽이 넓어져도 — 앞이 2.0 m 넘게 빌 때까지) | 0.00 · −0.30 |
+| `[0.8, 1.2, 0.8]` | 막다른 곳 → 정지·호버 | 0.00 · 0.00 |
+
+- 로그 예: `[드라이 런] [정지] 앞 1.20 m < 1.5 m → 왼쪽 좌우 이동 | vx +0.00 · vy -0.30 m/s (− = 왼쪽)` · 넷째 줄 `[드라이 런] [좌우 이동] 왼쪽 유지 | 앞 1.20 m (해제 2.0) | …` · 다시 앞을 `5.0` 으로 보내면 `앞 5.00 m ≥ 해제 2.0 m → 전진 +0.50 m/s` (방향을 풂)
+- 노드를 발행보다 먼저 켜면 `[드라이 런] 스캔 신호 없음 …` 경고가 2초마다 나오는 것이 정상. 발행하면 약 1초 뒤 `스캔 신호 복구 (1.0초 연속) → 회피 비행 재개` 와 함께 판단 줄이 나옵니다
+- 드라이 런은 위치를 쓰지 않아 코스 복귀·도착은 건너뛰고, 가속도 제한 **전**의 명령 값을 찍습니다
+- `.inf` 대신 `29.0` 으로 써도 같은 뜻(먼 장애물)입니다 — `30.0` 은 경계값(`range_max`)이라 버려집니다
+
+**1단계(`-p fly:=true`)로 넘어가기 전 — 모의 스캔 발행을 반드시 끕니다**: Ctrl+C 로 끄고, Agent(터미널 2)와 브리지(터미널 3, `pxh>` 뒤)를 켭니다. `ros2 topic info /lidar/scan` 의 `Publisher count` 가 1(브리지)인지 확인하고 나서 비행 노드를 켭니다. 모의 발행이 남아 있으면 노드는 가짜 스캔으로 판단합니다
+
+**로그 검산** (계산 예 — PX4 속도 추종 지연을 넣은 간이 시뮬레이션. VM 숫자는 조금 다름)
+- 1단계 호버: `[전진] 동 +0.0 m | 앞 5.38 · 왼쪽 자유 공간 · 오른쪽 3.54 m | 전진 +0.00 m/s`
+- 2단계 (전진을 켠 뒤 약 35초. 행동이 바뀌면 바로 한 줄, 같은 행동은 1초마다 한 줄):
+```
+[감속] 동 +2.4 m | 앞 2.98 m | 전진 +0.49 = 0.33 × (2.98 - 1.5)
+[정지] 앞 1.49 m < 1.5 m → 왼쪽 좌우 이동 (왼쪽 자유 공간 > 오른쪽 3.00 m)
+[좌우 이동] 왼쪽 | 앞 1.43 m (해제 2.0) | vy -0.30 m/s (− = 왼쪽) | 북 +0.1 m
+[감속] 동 +4.0 m · 북 +1.5 m | 앞 2.01 m ≥ 해제 2.0 m → 전진 +0.17 = 0.33 × (2.01 - 1.5) | … | 오른쪽 1.74 m < 2.0 → 복귀 보류
+[복귀] 오른쪽 · 뒤 대각선 2.0 m 넘게 빔 | 동 +7.8 m · 북 +1.8 m → vy +0.30 m/s · 전진 +0.50 m/s
+[도착] 동 +11.7 m (목표 12.0) → 정지·호버 — 끝내기: pxh> commander land
+```
+- 전진 속도 = k_slow × (앞 거리 − 정지 판단 거리) → 최소 0.1 · 최대 `cruise_speed` (**속도 제한**, 9주차 `kp × 오차 → 포화` 와 같은 꼴). 줄에는 판단이 정한 값이 찍히고, 가속도 제한(0.5 m/s²)으로 아직 따라가는 중이면 `| 보낸 값 vx … · vy … (가속도 제한)` 이 붙습니다
+- 정지 판단 1.5 m 와 해제 2.0 m 를 다르게 두어 경계에서 정지·전진이 번갈아 나오지 않습니다(**히스테리시스, hysteresis**). 해제는 북 약 1.5 m 이고 감속·속도 추종 지연으로 약 1.8 m 까지 밀려, 기둥 옆을 지날 때 프로펠러와 기둥 사이는 약 1.0 m (계산)
+- 기둥 옆에서는 복귀 쪽(오른쪽) 옆 + 뒤 대각선이 2.0 m 안이라 `복귀 보류` — 뒤 프로펠러까지 기둥을 지난 동쪽 약 7.8 m 에서 복귀를 시작합니다
+
+**비행 중에 바꾸기** — 0.1초마다 다시 읽으므로 착륙하지 않고 바로 바뀝니다(바뀌면 `전진 속도 변경: 0 → 0.5` · `좌우 이동 속도 변경: 0.3 → -0.3` · `앞 섹터 반각 변경: 30 → 1` · `감속 비례 상수 변경: 0.33 → 10` · `정지 판단 거리 변경: 1.5 → 2 (해제 2.5)` 같은 한 줄)
+- `cruise_speed` 0~0.5 (기본 0 — 0 이면 제자리, 좌우 이동도 멈춤 → 이상하면 `cruise_speed 0.0`) · `stop_dist` 1.2~3.0 (기본 1.5, 해제 = +0.5) · `k_slow` 0.1~10 (기본 0.33) · `v_side` −0.5~0.5 (기본 0.3) · `front_deg` 1~45 (기본 30). 범위 밖·숫자가 아닌 값은 경고 후 이전 값 유지 — `Set parameter successful` 이 떠도 노드 로그로 확인. `fly` 는 시작할 때만
+
+**일부러 틀리기**
+- 브리지 끄기 = **신호 없음** (학생): 비행 중 3번 터미널 Ctrl+C → 0.5초 뒤 `[신호 없음] 유효한 스캔 0.5초 없음 → 수평 정지·고도 유지` → 브리지 다시 실행 → `스캔 신호 복구 (1.0초 연속) → 회피 비행 재개`
+- 좌우 이동 부호 — 학생은 드라이 런으로: `-p v_side:=-0.3` 으로 켜고 `ranges: [0.8, 1.2, .inf]` → `[안전] 오른쪽 0.80 m < 안전 거리 1.0 m → 좌우 이동 정지 (v_side 부호 확인)`. 교수 비행 시연: `ros2 param set /avoid_base v_side -0.3` → 로그는 `왼쪽` 인데 `vy +0.30` — 기체는 기둥 남쪽(기둥과 벽 사이 2.5 m)으로 통과하고, 복귀는 북쪽으로. 되돌리기 `v_side 0.3`
+- 앞 섹터를 좁게 (교수 시연, `cruise_speed 0.3`): `ros2 param set /avoid_base front_deg 1.0` → 왼쪽으로 약 0.5 m 만에 '앞이 빔' 으로 풀려 전진 → `[근접] 앞쪽 0.99 m < 안전 거리 1.0 m → 전진 정지` (프로펠러와 기둥 약 0.5 m, 계산). 되돌리기 `front_deg 30` → 다시 정지 → 좌우 이동 → 통과
+- (선택) `k_slow 10` → 감속 구간이 사실상 없어 0.5 m/s 그대로 다가가 정지 판단 (넘침이 커짐 — 19강 정지 거리 표와 비교)
+
+- 안전장치 ([복붙 영역], 0 은 가속도 제한 없이 바로): 신호 없음(유효한 스캔 0.5초 없음 → 수평 정지·고도 유지, 1.0초 이어지면 재개) · 너무 가까움(`-inf` 한 칸이라도 → 수평 정지) · 근접(앞 ±45° 1.0 m 미만 → 전진 0, 좌우 이동은 허용 → 빠져나올 수 있음) · 옆 안전 거리(가는 쪽 옆 1.0 m 미만 → 좌우 0, 고른 쪽이면 막다른 곳 → 호버) · 사각지대(후진 없음) · 지오펜스(북 ±3 m 바깥쪽 좌우 0, 상대 고도 5 m 위로 상승 0)
+- **측정한 방향으로만 이동**: 뒤 90° 는 측정하지 않아 후진 명령이 없고, 측정 없는 섹터는 막힌 것으로 봅니다. PX4 입력 `/fmu/in/obstacle_distance` 에는 쓰지 않습니다(PX4 가 같은 스캔을 이미 받음)
+- **끝내는 순서**: PX4 터미널(`pxh>`)에서 `commander land` → 착지 확인 → `w11_avoid` Ctrl+C (그다음 3 → 2 → 1). 비행 중에 노드를 먼저 끄면 1초 뒤 PX4 가 Offboard 신호 끊김 비상 동작으로 넘어갑니다
+
+### 막혔을 때
+| 증상 | 원인 → 해결 |
+|------|-------------|
+| 브리지 `[경고] 하방 LiDAR 기체 — 11주차는 gz_x500_lidar_2d` | 10주차 습관으로 `gz_x500_lidar_down` 실행 → `pkill -9 -f "gz sim"` 뒤 `make px4_sitl gz_x500_lidar_2d` |
+| 브리지 `[경고] Gazebo에서 LiDAR 토픽을 찾지 못했습니다. 기본값으로 시도합니다.` | LiDAR 없는 기체(`gz_x500` 등) / PX4 보다 먼저 켬 → 기체 이름 확인, 브리지는 `pxh>` 뒤에 (10주차 표 첫 줄과 같음) |
+| 브리지 `[안내] 1빔 전방 LiDAR` · 뷰어 `1빔 기체 — 좌우 측정 없음` | `gz_x500_lidar_front` 등 1빔 기체 → 앞만 보이고 회피는 정지까지만 (좌우가 측정 없음 = 막힘). 11주차는 `gz_x500_lidar_2d` |
+| `Timed out waiting for Gazebo world` | 월드 복사 누락 → `ls ~/PX4-Autopilot/Tools/simulation/gz/worlds \| grep obstacle`, 0) 준비의 `cp` |
+| 이전 월드가 뜸 / `gazebo already running world:` | 이전 Gazebo 서버가 남음 → `pkill -9 -f "gz sim"` → `pgrep -af "gz sim"` 빈 줄 확인 후 다시 |
+| Gazebo 가 매우 느림 / `ros2 topic hz /lidar/scan` 이 30 Hz 보다 한참 낮음 | 2D LiDAR 렌더 부하(VM) → `HEADLESS=1`. 그래도 느리면 드라이 런·땅 값까지 하고 비행은 시연 영상으로 |
+| 땅에서 왼쪽이 `자유 공간` 이 아니라 `측정 없음` | 빈 방향이 `+inf` 가 아니라 최대값 `30.0` 으로 옴(경계값이라 버려짐) → `ros2 topic echo /lidar/scan --once` 의 `ranges` 화면을 게시판에 올려 주세요 |
+| 뷰어 `자기 기체 영역 N칸 버림` 이 계속 | 프로펠러·프레임이 스캔 평면에 잡힘 → 0.4 m 안이라 버려지므로 판단에는 영향 없음 |
+| 드라이 런 판단이 진짜 스캔 값과 번갈아 나옴 | 브리지가 켜진 채 모의 스캔 발행 → `ros2 topic info /lidar/scan` 의 Publisher count 가 1 이 되게 하나를 끔 |
+| `스캔 칸 정보가 이상해 버림` | 모의 스캔에서 `angle_min`·`angle_increment`·`range_min`·`range_max` 중 하나가 빠짐 → 위 명령을 그대로 복사 |
+| 이륙하지 않고 "Offboard 모드 전환 / Arm 명령 전송" 반복 | px4_msgs 가 main → 6주차 절의 `release/1.16` 전환 |
+| 이륙 뒤 앞으로 안 감 | 1단계 그대로(`cruise_speed` 0) / 신호 없음 / 도착 → `cruise_speed 0.5`, 로그 태그 확인 |
+| 기둥 앞에서 멈춘 채 그대로 (`[막다른 곳]`) | 고른 쪽 옆도 1.0 m 안 → 좌우 측정 확인(1빔 기체?) / `v_side` 가 0 → `v_side 0.3` |
+| 로그는 `왼쪽` 인데 기체는 오른쪽으로 | `v_side` 음수(일부러 틀리기 그대로) → `ros2 param set /avoid_base v_side 0.3` |
+| `[근접]` 이 반복되며 앞으로 안 감 | `front_deg` 를 좁힌 채(일부러 틀리기 그대로) → `ros2 param set /avoid_base front_deg 30` |
+| `ros2 param set` 이 노드를 못 찾음 / 값이 안 먹음 | 노드 이름 오타 / 범위 밖 값 → `ros2 node list` 에서 `/avoid_base`, 노드 로그의 경고 확인 |
+
 ## 4주차 커스텀 World
 ```bash
 # 1) PX4 월드 폴더로 복사 (PX4가 월드를 찾는 경로가 고정돼 있음)
@@ -498,7 +615,7 @@ gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construc
 ```
 drone_ros2_advanced/
 ├── config/waypoints.yaml      # 3주차~ waypoint 미션 설정
-├── worlds/                    # Gazebo World (PX4 폴더로 복사해 사용): 4주차 my_custom_world, 8주차 person_world + models/, 10주차 lidar_world
+├── worlds/                    # Gazebo World (PX4 폴더로 복사해 사용): 4주차 my_custom_world, 8주차 person_world + models/, 10주차 lidar_world, 11주차 obstacle_world
 └── drone_ros2_advanced/
     ├── px4_base.py            # PX4Base 클래스 (base 버전의 부모)
     ├── week02/                # 노드 기초 + 키보드 제어
@@ -508,11 +625,12 @@ drone_ros2_advanced/
     ├── week08/                # 객체 인식 (dnn_demo · person_detector · video_publisher · models/ MobileNet-SSD · samples/ 예시 사진·영상)
     ├── week09/                # 사람 추종 비행 (person_follow_base = w09_follow)
     ├── week10/                # 거리 센서 · LiDAR 지형 추종 (lidar_bridge = w10_lidar_bridge · range_viewer = w10_range_viewer · terrain_follow_base = w10_terrain_follow)
+    ├── week11/                # 2D LiDAR 장애물 감지 · 회피 (scan_bridge = w11_scan_bridge · scan_viewer = w11_scan_viewer · avoid_base = w11_avoid)
     ├── week13/                # 추종 안정화 (통합 미션)
     ├── week14/                # 심화 (YOLO)
     └── extras/                # 구 커리큘럼 자료 (참고용): GPS/지도(folium·flask 필요), 구 9주차 얼굴 추종 코드
 ```
-※ week11~12(회피·상태머신)는 교안 제작 진도에 맞춰 추가됩니다. 4주차는 파이썬 노드가 아니라 `worlds/` 의 SDF 파일이 실습 자산입니다.
+※ week12(상태머신)는 교안 제작 진도에 맞춰 추가됩니다. 4주차는 파이썬 노드가 아니라 `worlds/` 의 SDF 파일이 실습 자산입니다.
 
 ## 참고
 - 트러블슈팅: Gazebo 화면이 검게 나오면 `export LIBGL_ALWAYS_SOFTWARE=1` (VM 환경)

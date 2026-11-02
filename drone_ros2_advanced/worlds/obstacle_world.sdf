@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ============================================================================
+  obstacle_world.sdf  (11주차 19·20강 - 기둥 1개 + 남쪽 벽 1개, 장애물 감지·회피 실습)
+
+  땅 + 해 + 기둥 1개 + 남쪽 벽 1개 + 목표 표시 1개만 있는 월드입니다.
+  lidar_world 처럼 Fuel(온라인 모델)을 쓰지 않아 인터넷 없이 뜹니다.
+
+  드론은 원점에서 머리를 동쪽(+x)으로 두고 뜹니다 (PX4 v1.16 은 스폰 방향을 바꿀 수 없음).
+  그래서 동쪽으로 곧장 날면 기둥에 막히고, 왼쪽(북쪽)이 넓어 왼쪽으로 돌아갑니다.
+
+       북 +1 .  .  .  .  .  .  .  .  .  .  .  .  .  .  .
+       북  0  원점(드론) ──────▶ [기둥] ───────────────── [목표]
+                                 동 5.5~6.5            동 12
+       북 -3  ===== 남쪽 벽 (동 2~13 m, 북쪽 면 = 북 -3.0 m) =====
+
+  2D LiDAR 로 본 값 (19강 화면 읽기, 계산값 — 센서는 기체 중심 앞 0.12 m):
+    - 스폰(땅·호버) : 앞 5.38 m (기둥) · 왼쪽 자유 공간 (+inf) · 오른쪽 3.54 m (남쪽 벽 서쪽 끝)
+    - 기둥 앞 정지  : 앞 약 1.4 m · 왼쪽 자유 공간 · 오른쪽 3.00 m → 넓은 쪽 = 왼쪽
+    - 기둥과 벽 사이 2.5 m (북 -0.5 ~ -3.0) → 왼쪽이 막히면 오른쪽으로도 지나갈 수 있음 (20강 v_side -0.3 일부러 틀리기)
+
+  ★ 규칙 (4주차와 같음) ★
+    - 파일 이름(obstacle_world.sdf) = <world name="obstacle_world">
+      (다르면 PX4 가 "Timed out waiting for Gazebo world" 를 내며 종료)
+    - <world> 바로 아래에 <plugin> 을 쓰지 않는다 (PX4 server.config 자동 적용이 취소됨)
+    - 보이는 물체에는 <collision> 을 꼭 넣는다 (없으면 드론이 통과)
+    - <pose> 의 z 는 모델 원점 높이 → 높이 4.0 m 기둥은 z = 2.0 (높이의 절반)
+
+  설치 (한 번만) - 월드 파일 1개를 PX4 로 복사:
+    cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+    cp obstacle_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+
+  실행 (2D LiDAR 기체 - 카메라 없음, 수평으로 270° 를 1080칸으로 잼):
+    cd ~/PX4-Autopilot
+    PX4_GZ_WORLD=obstacle_world make px4_sitl gz_x500_lidar_2d
+    (VM 이 버거우면 앞에 HEADLESS=1 을 붙임 - Gazebo 화면 없이 실행)
+
+  월드를 바꿀 때 (이전 Gazebo 서버가 남아 있으면 이전 월드가 다시 뜸):
+    pkill -9 -f "gz sim"   →   pgrep -af "gz sim" 이 빈 줄인지 확인 후 다시 실행
+
+  좌표 주의 (4주차 핵심):
+    Gazebo <pose> 는 ENU = x(동) y(북) z(위)
+    PX4  위치     는 NED = x(북) y(동) z(아래)
+    → 기둥 <pose>6.0 0 2.0 …> = "동쪽 6.0 m, 북쪽 0 m" (기둥 범위: 동 5.5~6.5 m, 북 -0.5~0.5 m)
+    → PX4 좌표로는 (북 -0.5~0.5, 동 5.5~6.5) - 20강 노드는 NED 의 y(동쪽)로 목표, x(북쪽)로 코스 복귀를 판단
+  ============================================================================
+-->
+<sdf version="1.9">
+  <world name="obstacle_world">
+
+    <!-- ===== 여기부터 ===== PX4 기본 월드에서 그대로 가져온 부분 [복붙 영역]
+         (lidar_world · my_custom_world 와 같음. VM 렌더링이 버거우면 아래 <shadows> 와
+          <cast_shadows> 두 곳을 false 로 바꿔도 됨 - person_world 와 같은 방법) -->
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+    <scene>
+      <grid>false</grid>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>true</shadows>
+    </scene>
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1 1</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 -0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 -0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0 0 0 0 -0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <light name="sunUTC" type="directional">
+      <pose>0 0 500 0 -0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>0.001 0.625 -0.78</direction>
+      <diffuse>0.904 0.904 0.904 1</diffuse>
+      <specular>0.271 0.271 0.271 1</specular>
+      <attenuation>
+        <range>2000</range>
+        <linear>0</linear>
+        <constant>1</constant>
+        <quadratic>0</quadratic>
+      </attenuation>
+      <spot>
+        <inner_angle>0</inner_angle>
+        <outer_angle>0</outer_angle>
+        <falloff>0</falloff>
+      </spot>
+    </light>
+    <!-- ===== 여기까지 ===== [복붙 영역] 끝 -->
+
+    <!-- 시뮬레이션의 GPS 원점 (세종사이버대학교) - lidar_world 와 같음 -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>37.551187</latitude_deg>
+      <longitude_deg>127.073880</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+
+    <!-- ========================================================
+         기둥 1개 - 동쪽 6 m, 코스(북 0) 한가운데
+         - <pose>6.0 0 2.0 0 0 0 : x(동) 6.0, y(북) 0, z = 높이 4.0 의 절반
+             → 동쪽 5.5~6.5 m, 북쪽 -0.5~0.5 m, 높이 0~4.0 m
+         - 크기를 고른 이유 (계산값):
+             폭 1 m    : 기체 폭(약 0.63 m)보다 넓어 정면 1칸만 보면 '옆으로 조금 비켜도 걸린다'를 보일 수 있음 (19강 화면 읽기 ②)
+             높이 4 m  : 2D LiDAR 스캔 평면(상대 고도 2 m 에서 땅 위 약 2.3 m)보다 충분히 높음
+                         (18강 1 m 상자처럼 평면보다 낮은 물체는 2D LiDAR 에 안 보인다 → 하방 센서 몫)
+             동쪽 6 m  : 0.5 m/s 로 감속(앞 3.0 m)·정지(앞 1.5 m)를 거칠 거리가 있음
+         ======================================================== -->
+    <model name="pillar">
+      <static>true</static>
+      <pose>6.0 0 2.0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>1 1 4</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1 1 4</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.5 0.2 1</ambient>
+            <diffuse>0.9 0.5 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========================================================
+         남쪽 벽 1개 - 오른쪽(남쪽)을 좁게 만들어 '넓은 쪽 = 왼쪽' 이 되게 함
+         - <pose>7.5 -3.1 2.0 0 0 0 : 동 7.5, 북 -3.1 (두께 0.2 → 북쪽 면이 북 -3.0), z = 높이 4.0 의 절반
+             → 동쪽 2~13 m, 북쪽 면 = 북 -3.0 m
+         - 기둥 남쪽 면(북 -0.5)과 벽 사이 2.5 m → 오른쪽으로 돌아가도 지나갈 수는 있음 (부딪히지 않음)
+         - 스폰 위치에서 오른쪽 최근접 거리 3.54 m = 벽 서쪽 끝 모서리 (동 2, 북 -3) 까지 (계산)
+         ======================================================== -->
+    <model name="south_wall">
+      <static>true</static>
+      <pose>7.5 -3.1 2.0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>11 0.2 4</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>11 0.2 4</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.65 1</ambient>
+            <diffuse>0.6 0.6 0.65 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========================================================
+         목표 표시 - 동쪽 12 m 바닥의 얇은 판 (두께 1 cm)
+         - 스캔 평면보다 한참 낮아 LiDAR 에는 보이지 않는다 (화면에서 목표 위치를 보여 주는 표시일 뿐)
+         - 20강 노드는 이 판을 보지 않고, PX4 위치(동쪽 12.0 m - 0.3 m)로 도착을 판단한다
+         ======================================================== -->
+    <model name="goal_pad">
+      <static>true</static>
+      <pose>12.0 0 0.005 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>1 1 0.01</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1 1 0.01</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.2 0.7 0.3 1</ambient>
+            <diffuse>0.2 0.7 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>
