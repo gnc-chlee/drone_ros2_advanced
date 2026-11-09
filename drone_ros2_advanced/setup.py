@@ -87,6 +87,15 @@ setup(
             'w11_scan_viewer = drone_ros2_advanced.week11.scan_viewer:main',
             'w11_avoid = drone_ros2_advanced.week11.avoid_base:main',
 
+            # ── 12주차: 상태머신 미션 · 모드 전환 (PX4Base) ──────────
+            #    수업용: w12_fsm_sim (21강, PX4 없음) / w11_scan_bridge + w12_mission + w12_keyboard (22강)
+            #    (기본 = 드라이 런, --ros-args -p fly:=true 로 비행. 11주차와 달리 전진 속도 기본 0.5 = 켜면 끝까지)
+            #    w12_state_viewer = 상태도 창 (선택, PX4 에 명령 안 함 — 21강 시뮬레이터 창과 같은 그림)
+            'w12_fsm_sim = drone_ros2_advanced.week12.fsm_sim:main',
+            'w12_mission = drone_ros2_advanced.week12.mission_base:main',
+            'w12_keyboard = drone_ros2_advanced.week12.mission_keyboard:main',
+            'w12_state_viewer = drone_ros2_advanced.week12.state_viewer:main',
+
             # ── 13주차: 추종 안정화 (통합 미션 소재) ─────────────
             'w13_stable_raw = drone_ros2_advanced.week13.face_following_stable_raw:main',
             'w13_stable_base = drone_ros2_advanced.week13.face_following_stable_base:main',
