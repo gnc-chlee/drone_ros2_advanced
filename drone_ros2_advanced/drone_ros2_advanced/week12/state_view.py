@@ -3,13 +3,14 @@
 # File    : state_view.py  (12주차 21·22강)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-11-09
-# Version : 1.0.0
+# Version : 1.1.0   (2026-11-10 단순화)
 #
 # Description:
 #   상태도 그림 — 21강 시뮬레이터(w12_fsm_sim)와 22강 상태 뷰어(w12_state_viewer)가 같이 쓴다
 #   화살표는 전이 조건표에서 그린다 → 표에서 줄을 지우면 그 화살표가 사라진다
 #   화살표 옆 숫자 = 표의 줄 번호. 지금 상태 = 빨강, 지나온 상태·화살표 = 진하게, 방금 지난 화살표 = 빨강
-#   창 안 글자는 영어·숫자만 (OpenCV 는 한글을 못 쓴다 — 8주차 HUD 와 같음)
+#   표 밖 안전장치 전이(safety)는 화살표가 없다 → 최근 전이 줄에만 'safety' 로 보인다
+#   창 안 글자는 영어·숫자만 (OpenCV 는 한글을 못 쓴다 — 8주차 HUD 와 같음. '—' 같은 기호도 '???' 로 그려짐)
 #   ROS 없음 (numpy + OpenCV 만). 학생은 읽지 않아도 되는 파일
 #
 # Repository:
@@ -23,7 +24,7 @@ import math
 import cv2
 import numpy as np
 
-from .mission_table import AVOID, CRUISE, DONE, EVENTS, FLYING, HOLD, IDLE, LAND, MANUAL, TAKEOFF, TRANSITIONS
+from .mission_table import AVOID, CRUISE, DONE, EVENTS, HOLD, IDLE, LAND, TAKEOFF, TRANSITIONS
 
 WIDTH = 640
 
@@ -39,19 +40,20 @@ BLUE   = (216, 111, 58)      # #3a6fd8 앞 거리 곡선
 FONT   = cv2.FONT_HERSHEY_SIMPLEX
 
 # ── 상태도 배치 (상자 가운데 x, y — 상태도 영역 안 좌표) ─────────────
+#    윗줄 = 정상 경로 IDLE → TAKEOFF → CRUISE → LAND → DONE, 아랫줄 = CRUISE 아래 AVOID · LAND 아래 HOLD
+#    화살표 10개가 모두 직선 (새 상태를 더하면 여기에 자리를 추가 — 자리가 없는 상태의 화살표는 그리지 않음)
 HEADER_H  = 28
 DIAGRAM_H = 226
 SIM_H     = 480      # 시뮬레이터 창 높이
 VIEW_H    = 480      # 뷰어 창 높이
 BOX_W, BOX_H = 92, 32
 POS = {
-    IDLE: (52, 60), TAKEOFF: (170, 60), CRUISE: (300, 60), LAND: (562, 80),
-    MANUAL: (170, 170), AVOID: (300, 170), HOLD: (432, 170), DONE: (562, 196),
+    IDLE: (52, 60), TAKEOFF: (170, 60), CRUISE: (300, 60), LAND: (440, 60), DONE: (570, 60),
+    AVOID: (300, 170), HOLD: (440, 170),
 }
-FRAME = (114, 26, 490, 210)                       # '비행 중 전체' 묶음 점선 (x0, y0, x1, y1)
-GROUP_START = {LAND: (490, 38), DONE: (490, 196)}  # 묶음 화살표가 나가는 자리
 
-GROUP_NAMES = {'PX4': 'PX4', '사람': 'person', '센서': 'sensor', '미션': 'mission', '시간': 'time'}
+GROUP_NAMES = {'미션': 'mission', '페일세이프': 'failsafe'}   # 사건 구분 → 창에 쓰는 영어
+LEGEND_X = 84        # 사건 안내에서 사건 이름이 시작하는 x (구분 이름 'mission' · 'failsafe' 다음)
 
 
 # ================================================================
@@ -104,7 +106,7 @@ def _border(center, toward, pad=3):
 
 
 def _blocked(a, b):
-    """같은 줄의 두 상자 사이에 다른 상자가 있는지 (있으면 아래로 돌아감)"""
+    """같은 줄의 두 상자 사이에 다른 상자가 있는지 (있으면 아래로 돌아감 — 지금 표에는 없음, 줄을 더할 때 대비)"""
     (xa, ya), (xb, _) = POS[a], POS[b]
     return any(s not in (a, b) and y == ya and min(xa, xb) < x < max(xa, xb) for s, (x, y) in POS.items())
 
@@ -113,25 +115,17 @@ def _blocked(a, b):
 # 화살표 = 표의 줄
 # ================================================================
 def edges(table=TRANSITIONS, numbers=None):
-    """표 → 화살표 목록 [(출발 상태, 도착 상태, 줄 번호)]. '비행 중 전체' 줄은 묶음 화살표 ('FLYING', 도착, 번호)
-       numbers = 줄 번호 목록 (시뮬레이터에서 줄을 지우거나 바꿔도 처음 번호를 그대로 쓰기 위해)"""
+    """표 → 화살표 목록 [(출발 상태, 도착 상태, 줄 번호)] — 한 줄 = 화살표 하나
+       numbers = 줄 번호 목록 (시뮬레이터에서 줄을 지워도 처음 번호를 그대로 쓰기 위해)"""
     numbers = list(numbers) if numbers is not None else list(range(1, len(table) + 1))
     out = []
     for no, (froms, _, to) in zip(numbers, table):
-        if set(froms) == set(FLYING):
-            out.append(('FLYING', to, no))
-        else:
-            out.extend((s, to, no) for s in froms if s != to and s in POS and to in POS)
+        out.extend((s, to, no) for s in froms if s != to and s in POS and to in POS)
     return out
 
 
 def route(a, b, pair=False):
     """화살표 길 = (점 목록, 번호 자리). pair = 반대 방향 화살표도 있음 → 나란히 비켜 그림"""
-    if a == 'FLYING':
-        start = GROUP_START.get(b, (FRAME[2], POS[b][1]))
-        end = _border(POS[b], start)
-        mx, my = (start[0] + end[0]) / 2, (start[1] + end[1]) / 2
-        return [start, end], (mx, my - 9)
     ca, cb = POS[a], POS[b]
     if ca[1] == cb[1] and _blocked(a, b):          # 같은 줄, 사이에 상자 → 아래로 돌아감
         y = ca[1] + BOX_H / 2 + 14
@@ -156,22 +150,14 @@ def _draw_edge(img, pts, color, thick):
 
 def diagram(img, top, table, numbers, state, visited=(), done_rows=(), last=None, marks=()):
     """상태도. done_rows = 지나온 줄 {(줄 번호, 출발 상태)}, last = 방금 지난 전이 (출발, 도착, 줄 번호),
-       marks = 점검에서 걸린 상태 (빨간 점선)"""
+       marks = 점검에서 걸린 상태 (빨간 점선). 안전장치 전이(줄 번호 'safety')는 맞는 화살표가 없어 빨개지지 않는다"""
     area = img[top:top + DIAGRAM_H]
-    x0, y0, x1, y1 = FRAME
-    _dashed_rect(area, x0, y0, x1, y1, FAINT)
-    _text(area, 'flying', (x0 + 6, y0 + 13), 0.4, SOFT)
-
     arrows = edges(table, numbers)
     pairs = {(a, b) for a, b, _ in arrows}
     drawn = []
     for a, b, no in arrows:
-        if a == 'FLYING':
-            used = any(n == no for n, _ in done_rows)
-            now = last is not None and last[2] == no
-        else:
-            used = (no, a) in done_rows
-            now = last is not None and last[2] == no and last[0] == a
+        used = (no, a) in done_rows
+        now = last is not None and last[2] == no and last[0] == a
         level = 2 if now else 1 if used else 0
         pts, label = route(a, b, pair=(b, a) in pairs)
         drawn.append((level, pts, label, no))
@@ -220,18 +206,23 @@ def _heading(img, y, s):
 
 
 def _recent(img, y, recent, timed=False):
-    """최근 전이 3줄 — recent = [(시각 또는 None, 줄 번호, 사건, 출발, 도착)], 최신이 맨 앞"""
-    y = _heading(img, y, 'recent transitions   (time)  #row  event  from -> to' if timed else
-                 'recent transitions   #row  event  from -> to')
+    """최근 전이 3줄 — recent = [(시각 또는 None, 줄 번호 또는 'safety', 사건, 출발, 도착)], 최신이 맨 앞
+       표의 줄은 '#3', 표 밖 안전장치는 'safety' (화살표가 없으므로 이 줄에만 보인다)"""
+    rows = list(recent)[:3]
+    _heading(img, y, 'recent transitions   (time)  #row  event  from -> to' if timed else
+             'recent transitions   #row  event  from -> to')
+    if any(not isinstance(no, int) for _, no, _, _, _ in rows):   # 안전장치 줄이 있으면 뜻을 머리줄 오른쪽에
+        _text(img, '(safety = checked before the table, no arrow)', (WIDTH - 10, y + 15), 0.35, SOFT, anchor='right')
+    y += 20
     x = 74 if timed else 14                         # 칸 위치를 고정 (글자 폭이 제각각이라 공백으로 못 맞춤)
-    if not recent:
+    if not rows:
         _text(img, '(none yet)', (14, y + 13), 0.45, SOFT)
-    for i, (t, no, event, a, b) in enumerate(list(recent)[:3]):
+    for i, (t, no, event, a, b) in enumerate(rows):
         color, ty = (ACCENT if i == 0 else INK), y + 13 + 17 * i
         if t is not None:
             _text(img, f'{t:.1f} s', (x - 12, ty), 0.45, color, anchor='right')
-        _text(img, f'#{no}', (x, ty), 0.45, color)
-        _text(img, event, (x + 40, ty), 0.45, color)
+        _text(img, f'#{no}' if isinstance(no, int) else str(no), (x, ty), 0.45, color)
+        _text(img, event, (x + 56, ty), 0.45, color)
         _text(img, f'{a} -> {b}', (x + 172, ty), 0.45, color)
     return y + 13 + 17 * 2 + 10
 
@@ -248,32 +239,36 @@ def _fit_path(path, width, scale=0.45):
 
 def sim_frame(table, numbers, state, visited, done_rows, last, recent, path,
               check=None, changed='', hint=False):
-    """21강 시뮬레이터 창. check = check_table 결과 (c 를 누른 뒤만), changed = 표를 바꾼 내용"""
+    """21강 시뮬레이터 창. check = check_table 결과 (IDLE 에서 갈 수 없는 상태, DONE 까지 못 가는 상태)
+       — 줄을 지운 뒤에만. changed = 표를 바꾼 내용 ('deleted 9 10')"""
     img = _canvas(SIM_H)                            # 높이 고정 — 줄이 늘었다 줄었다 해도 창 크기가 그대로
     _header(img, 'w12_fsm_sim', state, 'type in the terminal  |  v = close window')
-    marks = set().union(*check) if check else set()
+    marks = set(check[1]) if check else set()       # DONE 까지 못 가는 상태 (갇힘) = 빨간 점선
     diagram(img, HEADER_H, table, numbers, state, visited, done_rows, last, marks)
     y = _recent(img, HEADER_H + DIAGRAM_H, recent)
     cv2.line(img, (10, y), (WIDTH - 10, y), FAINT, 1)
     _text(img, 'path', (14, y + 17), 0.4, SOFT)
     _text(img, _fit_path(path, WIDTH - 72), (58, y + 17), 0.45, INK)
     y += 24
-    if changed:                                      # 표를 바꾼 내용 · 점검 결과 (두 줄 자리는 늘 비워 둠)
+    if changed:                                      # 표를 바꾼 내용 · 점검 결과 (세 줄 자리는 늘 비워 둠)
         _text(img, f'table changed: {changed}   (r = restore)', (14, y + 13), 0.45, ACCENT)
     if check is not None:
-        unreachable, no_finish, stuck = check
-        if not (unreachable or no_finish or stuck):
+        unreachable, no_finish = check
+        if not (unreachable or no_finish):
             _text(img, 'check: OK', (14, y + 31), 0.45, INK)
         else:
-            parts = [f'{name} {" ".join(s)}' for name, s in
-                     (('unreachable', unreachable), ('no finish', no_finish), ('stuck', stuck)) if s]
-            _text(img, 'check: ' + '  |  '.join(parts), (14, y + 31), 0.45, ACCENT)
-    y = _heading(img, y + 40, 'events  (type the number, several = same moment)')
+            _text(img, 'check', (14, y + 31), 0.45, ACCENT)
+            for k, (name, states) in enumerate((('unreachable from IDLE: ', unreachable),
+                                                ('stuck (cannot reach DONE): ', no_finish))):
+                _text(img, name + (' '.join(states) or 'none'), (70, y + 31 + 18 * k), 0.45,
+                      ACCENT if states else SOFT)
+    y = _heading(img, y + 58, 'events - type the NAME in the terminal (one per line)')
     for i, line in enumerate(event_lines()):
-        x = 14
-        for j, item in enumerate(line):
-            x += _text(img, item, (x, y + 13 + 16 * i), 0.4, INK if item[0].isdigit() else SOFT)
-            x += 14 if j < len(line) - 1 else 0
+        ty = y + 13 + 16 * i
+        _text(img, line[0], (14, ty), 0.4, SOFT)                # 구분 이름 (옅게)
+        x = LEGEND_X
+        for name in line[1:]:                                    # 사건 이름 (진하게)
+            x += _text(img, name, (x, ty), 0.4, INK) + 14
     if hint:
         cv2.rectangle(img, (120, HEADER_H + 96), (WIDTH - 120, HEADER_H + 130), ACCENT, -1)
         _text(img, 'type in the TERMINAL window', (WIDTH / 2, HEADER_H + 113), 0.6, WHITE, 2, anchor='center')
@@ -281,14 +276,11 @@ def sim_frame(table, numbers, state, visited, done_rows, last, recent, path,
 
 
 def event_lines():
-    """사건 번호 안내 4줄: [['PX4', '1 ready', ...], ['person', ...], ['sensor', ...], ['mission', ..., 'time', ...]]"""
+    """사건 안내 2줄: [['mission', 'ready', 'airborne', ...], ['failsafe', 'sensor_bad', ...]] — 첫 칸 = 구분 이름"""
     merged = {}
-    for i, (group, name, _) in enumerate(EVENTS, 1):
-        merged.setdefault(GROUP_NAMES.get(group, group), []).append(f'{i} {name}')
-    lines = [[group] + items for group, items in merged.items()]
-    if len(lines) == 5:                              # 미션 · 시간은 한 줄에
-        lines[3] += lines.pop(4)
-    return lines
+    for group, name, _ in EVENTS:
+        merged.setdefault(GROUP_NAMES.get(group, group), []).append(name)
+    return [[group] + names for group, names in merged.items()]
 
 
 def viewer_frame(state, since, visited, done_rows, last, recent, bands, series, now,
@@ -338,8 +330,9 @@ def _timeline(img, y, bands, series, now, stop, clear, span, top_m=4.0):
         _dashed(img, (x0, my(m)), (x1, my(m)), color)
         _text(img, name, (x0 - 6, my(m) + 4), 0.36, color, anchor='right')
     _text(img, f'{top_m:.0f} m', (x0 - 6, py0 + 4), 0.36, SOFT, anchor='right')
-    _text(img, f'-{span:.0f} s', (x0, py1 + 14), 0.36, SOFT)
-    _text(img, 'now', (x1, py1 + 14), 0.36, SOFT, anchor='right')
+    # 시간 축 글자는 곡선 영역 맨 아래 안쪽에 (아래 선 밖에 두면 창 높이 480 을 넘어 잘림)
+    _text(img, f'-{span:.0f} s', (x0 + 2, py1 - 3), 0.36, SOFT)
+    _text(img, 'now', (x1 - 2, py1 - 3), 0.36, SOFT, anchor='right')
 
     run = []
     for t, m in series:

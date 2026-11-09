@@ -3,27 +3,29 @@
 # File    : state_viewer.py  (12주차 22강)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-11-09
-# Version : 1.0.0
+# Version : 1.1.0   (2026-11-10 단순화)
 #
 # Description:
 #   미션 상태 뷰어 — 상태도에서 지금 상태에 불이 들어오고, 방금 쓰인 표의 줄 번호가 보인다
 #   PX4 에 명령을 보내지 않는다 → 언제 켜고 꺼도 미션에 영향이 없다 (드라이 런에서도 동작)
-#   그림은 21강 시뮬레이터(w12_fsm_sim)와 같다 (state_view.py)
+#   그림은 21강 시뮬레이터(w12_fsm_sim)와 같다 (state_view.py — 화살표는 전이 조건표 10줄만)
 #
 #   창 (글자는 영어·숫자만 — OpenCV 는 한글을 못 쓴다):
 #     위     : 상태도. 화살표 옆 숫자 = 표의 줄 번호, 방금 지난 화살표 = 빨강
-#     가운데 : 최근 전이 3줄   38.5 s  #11  arrived  CRUISE -> LAND
+#     가운데 : 최근 전이 3줄   38.5 s  #5  arrived  CRUISE -> LAND
+#              표 밖 안전장치는 화살표가 없어 이 줄에만:   41.2 s  safety  px4_takeover  CRUISE -> DONE
 #     아래   : 최근 60초 상태 띠 + 앞 거리(±30°) 곡선, 1.5 m 정지 판단 · 2.0 m 해제 선 (히스테리시스)
 #
 #   구독 토픽:
 #     /sjcu/mission_state      : String 상태 이름 (w12_mission — 나중에 켜도 지금 상태를 받음)
-#     /sjcu/mission_transition : String 전이 한 줄 '15.4 | CRUISE → AVOID | 12 front_blocked | …' (w12_mission)
+#     /sjcu/mission_transition : String 전이 한 줄 '15.4 | CRUISE → AVOID | 3 front_blocked | …' (w12_mission)
+#                                안전장치면 '41.2 | CRUISE → DONE | safety px4_takeover | …'
 #     /lidar/scan              : LaserScan — 앞 거리는 미션 노드와 같은 함수(sector_min)로 계산
 #
-#   실행 방법 (선택 — 안 켜도 미션은 같다):
+#   실행 방법 (선택 — 안 켜도 미션은 같다. 22강 터미널 4, 미션(5)보다 먼저 켜면 처음부터 보임):
 #     ros2 run drone_ros2_advanced w12_state_viewer
 #     ros2 run drone_ros2_advanced w12_state_viewer --ros-args -p record:=true
-#         → (교수용) ~/w12_state_<시각>.csv 에 0.1초마다 한 줄 — 상태 시간표 그림 데이터
+#         → (교수용) ~/w12_state_<시각>.csv 에 0.1초마다 한 줄 — 전이 시각 · 앞 거리 확인용
 #   끝내기: 창에서 q · 창 닫기 · Ctrl+C
 #   미션 노드를 다시 켜면(IDLE 이 다시 오면) 그림을 처음부터 그린다
 #
@@ -60,15 +62,20 @@ CSV_COLUMNS = ['t', 'state', 'front', 'transition']
 
 
 def parse_transition(text):
-    """'15.4 | CRUISE → AVOID | 12 front_blocked | 앞 …' → (15.4, 'CRUISE', 'AVOID', 12, 'front_blocked')
-       모양이 다르면 None"""
+    """'15.4 | CRUISE → AVOID | 3 front_blocked | 앞 …' → (15.4, 'CRUISE', 'AVOID', 3, 'front_blocked')
+       '41.2 | CRUISE → DONE | safety px4_takeover | …' → (41.2, 'CRUISE', 'DONE', 'safety', 'px4_takeover')
+       줄 칸이 숫자면 int, safety 면 글자 그대로 (표 밖 안전장치 — 화살표 없음). 모양이 다르면 None"""
     try:
         t, move, rule = [p.strip() for p in text.split('|')[:3]]
         a, b = [s.strip() for s in move.split('→')]
         no, event = rule.split()
         if a not in view.POS or b not in view.POS:
             return None
-        return float(t), a, b, int(no), event
+        if no.isascii() and no.isdigit():
+            no = int(no)
+        elif no != 'safety':
+            return None
+        return float(t), a, b, no, event
     except (ValueError, AttributeError):
         return None
 
@@ -131,8 +138,8 @@ class StateViewer(Node):
         self.state, self.since = state, now
         self.visited = {state} if state else set()
         self.done_rows = set()          # 지나온 줄 {(줄 번호, 출발 상태)}
-        self.last = None                # 방금 지난 전이 (출발, 도착, 줄 번호)
-        self.recent = deque(maxlen=3)   # 최근 전이 [(미션 시각, 줄 번호, 사건, 출발, 도착)]
+        self.last = None                # 방금 지난 전이 (출발, 도착, 줄 번호 또는 'safety')
+        self.recent = deque(maxlen=3)   # 최근 전이 [(미션 시각, 줄 번호 또는 'safety', 사건, 출발, 도착)]
         self.bands = [(now, state)] if state else []   # 상태 띠: 상태가 바뀐 시각
 
     def _enter(self, state, now):
@@ -171,10 +178,10 @@ class StateViewer(Node):
         if b != self.state:
             self._enter(b, now)
         self.visited.add(a)
-        self.done_rows.add((no, a))
+        self.done_rows.add((no, a))     # 안전장치('safety')는 맞는 화살표가 없어 그림에는 안 보임
         self.last = (a, b, no)
         self.recent.appendleft((t, no, event, a, b))
-        self.pending = f'{no} {event}'
+        self.pending = f'{no} {event}'  # CSV: '3 front_blocked' · 'safety px4_takeover'
 
     def _scan_callback(self, msg: LaserScan):
         self.scan, self.scan_at = msg, time.monotonic()
@@ -227,9 +234,9 @@ class StateViewer(Node):
             return True
 
     # ============================================================
-    # [복붙 영역] CSV 기록 (record:=true, 교수용 — 상태 시간표 그림 데이터). 0.1초마다 한 줄
+    # [복붙 영역] CSV 기록 (record:=true, 교수용 — 전이 시각 · 앞 거리 확인용). 0.1초마다 한 줄
     #   t 뷰어 시작 뒤 시간 [s] · state 상태 · front 앞 거리 [m] (자유 공간 = inf, 측정 없음 = 빈칸)
-    #   transition 그 사이에 지난 전이 '12 front_blocked' (없으면 빈칸)
+    #   transition 그 사이에 지난 전이 '3 front_blocked' · 안전장치면 'safety px4_takeover' (없으면 빈칸)
     # ============================================================
     def _open_record(self):
         path = os.path.expanduser(time.strftime('~/w12_state_%Y%m%d_%H%M%S.csv'))

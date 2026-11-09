@@ -3,66 +3,71 @@
 # File    : mission_base.py  (12주차 22강)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-11-06
-# Version : 1.0.0
+# Version : 1.1.0   (2026-11-10 단순화)
 #
 # Description:
 #   11주차 회피 미션을 상태머신으로 다시 쓴 노드 — 켜면 이륙부터 착륙까지 스스로 끝난다
 #   (PX4Base 상속 · 전이 조건표는 mission_table.py · 섹터 계산과 상수는 week11/avoid_base.py 에서 가져옴)
 #
 #   0.1초마다 세 단계뿐 (on_update):
-#     ① sense()      : 입력(PX4 상태 · 사람 명령 · 스캔 · 시간) → 사건 이름들
-#     ② next_state() : 전이 조건표를 위 줄부터 찾기 → 다음 상태
+#     ① sense()      : 입력(PX4 상태 · 스캔 · 시간) → 사건 이름들 (지금 맞는 사건을 모두)
+#     ② next_state() : 표 밖 안전장치 2줄을 먼저, 그다음 전이 조건표를 위 줄부터 찾기 → 다음 상태
 #     ③ do[상태]()   : 지금 상태의 일 (명령 1번)
-#     상태가 바뀌는 곳은 go() 한 곳뿐: [전이] 로그 → 진입 동작(entry action) → 전이 · 상태 발행
+#     상태가 바뀌는 곳은 go() 한 곳뿐: [전이] 로그 → 들어갈 때 한 번 하는 일 → 전이 · 상태 발행
 #
 #   11주차와 달라진 점:
-#     - 막다른 곳 · 도착 · 신호 없음이 호버로 끝나지 않고 나가는 길이 있다 (표 6 · 8 · 11번 줄)
-#     - 수동 개입(manual override): 키 M 으로 사람이 넘겨받고, G 로 돌려주고, L 로 착륙
-#     - PX4 가 조종권을 가져가면(Offboard 가 아닌 채 1초) 다시 요청하지 않고 손을 뗀다 → DONE
+#     - 도착 · 신호 끊김 · 막다른 곳이 호버로 끝나지 않고 나가는 길이 있다
+#       (도착 = 5번 줄 LAND · 신호 끊김 = 7 · 8번 줄 HOLD → 10번 CRUISE 또는 9번 LAND · 막다른 곳 = 안전장치 LAND)
+#     - 노드가 상태에 따라 PX4 비행 모드를 바꾼다: IDLE 에서 Offboard + Arm 요청 · LAND 에서 Land 요청 · DONE 에서 명령을 멈춤
+#
+#   표 밖 안전장치 2줄 (mission_table.SAFETY — 표보다 먼저 본다, 전이 로그에는 '안전장치'):
+#     px4_takeover : 비행 중 Offboard 가 아닌 채 1초 (사람이 pxh> commander land · PX4 비상 동작)
+#                    → DONE: 다시 요청하지 않고 명령을 멈춘다 (조종권을 넘김)
+#     dead_end     : AVOID 에서 막다른 곳 (양옆 막힘 · 재탐색 뒤에도 막힘 · 30초) → LAND
 #
 #   안전 필터는 상태와 별개 (_send, 명령을 보내기 직전에 매 틱):
 #     근접 : 앞 ±45° 1.0 m 미만 → 전진 0        옆 안전 거리 : 가는 쪽 옆 1.0 m 미만 → 좌우 0
 #     지오펜스 : 북 ±3 m 바깥쪽 좌우 0 · 상대 고도 5 m 위로 상승 0
-#     사각지대 : 뒤 90° 는 측정하지 않으므로 후진 없음 (MANUAL 만 예외 — 사람이 보고 있음)
+#     사각지대 : 뒤 90° 는 측정하지 않으므로 후진 없음 (어느 상태든)
 #
 #   구독 토픽:
 #     /lidar/scan                     : LaserScan (w11_scan_bridge)
 #     /fmu/out/vehicle_local_position : 상대 고도(−z) · 동쪽 위치(y) · 북쪽 위치(x)
-#     /sjcu/mission_cmd               : String manual · auto · land (w12_keyboard)
-#     /sjcu/manual_cmd                : Float32MultiArray [vx, vy] 몸체 속도, vy + = 오른쪽 (w12_keyboard)
 #   발행 토픽:
 #     /sjcu/mission_state             : String 상태 이름 (전이 때마다, 나중에 켠 구독자도 마지막 값을 받음)
-#     /sjcu/mission_transition        : String 전이 한 줄 '15.4 | CRUISE → AVOID | 12 front_blocked | 앞 1.49 m < 1.5 m'
+#     /sjcu/mission_transition        : String 전이 한 줄 '15.4 | CRUISE → AVOID | 3 front_blocked | 앞 1.49 m < 1.5 m'
 #                                       (미션 시작 뒤 시각 | 전이 | 표의 줄 번호 사건 | 이유 — w12_state_viewer 가 받음)
+#                                       안전장치면 줄 번호 자리에 safety: '41.2 | CRUISE → DONE | safety px4_takeover | …'
 #     PX4 명령은 PX4Base 가 맡음
 #
 #   준비: 11주차 월드 그대로 (obstacle_world.sdf 를 PX4 폴더로 복사했으면 끝)
 #
-#   실행 방법:
-#     0단계 드라이 런 (비행하지 않음, PX4·Agent 없어도 됨 — 브리지 터미널 3 은 끈다):
-#       ros2 run drone_ros2_advanced w12_mission
-#       (새 터미널) ros2 topic pub -r 10 /lidar/scan sensor_msgs/msg/LaserScan \
-#                     "{angle_min: -1.0472, angle_increment: 1.0472, range_min: 0.1, range_max: 30.0, ranges: [2.0, 5.0, .inf]}"
-#       → 칸 3개 = −60° · 0° · +60° = 오른쪽 · 앞 · 왼쪽. ranges 를 바꾸면 전이가 일어난다
-#         [2.0, 1.2, .inf] → AVOID  /  [2.0, 5.0, .inf] → CRUISE  /  [0.8, 1.2, 0.8] → 막다른 곳 → LAND → DONE
-#         [2.0, -.inf, .inf] → HOLD (너무 가까움)
-#       ※ ranges 를 바꾸려면 발행을 껐다 켜야 하므로, 드라이 런은 발행이 끊겨도 마지막 스캔을 계속 쓴다
-#         (신호 끊김은 비행 중 브리지 끄기로 확인)
-#     비행:
-#       터미널 1: cd ~/PX4-Autopilot && PX4_GZ_WORLD=obstacle_world make px4_sitl gz_x500_lidar_2d
-#       터미널 2: MicroXRCEAgent udp4 -p 8888
-#       터미널 3: ros2 run drone_ros2_advanced w11_scan_bridge         ← pxh> 가 뜬 뒤에!
-#       터미널 4: ros2 run drone_ros2_advanced w12_mission --ros-args -p fly:=true
-#       터미널 5: ros2 run drone_ros2_advanced w12_keyboard            ← 수동 개입 (선택)
-#       터미널 6: ros2 run drone_ros2_advanced w12_state_viewer        ← 상태도 창 (선택, 드라이 런에서도 됨)
+#   실행 방법 (20강과 같은 자리 — PX4 에 명령하는 노드는 5번 하나, w11_avoid · keyboard_control 은 끈다):
+#     터미널 1: cd ~/PX4-Autopilot && PX4_GZ_WORLD=obstacle_world make px4_sitl gz_x500_lidar_2d
+#     터미널 2: MicroXRCEAgent udp4 -p 8888
+#     터미널 3: ros2 run drone_ros2_advanced w11_scan_bridge         ← pxh> 가 뜬 뒤에!
+#     터미널 4: ros2 run drone_ros2_advanced w12_state_viewer        ← 상태도 창 (선택, 표시 전용 — 미션보다 먼저 켜면 처음부터 보임)
+#     터미널 5: ros2 run drone_ros2_advanced w12_mission --ros-args -p fly:=true
 #
-#   끝내기: DONE 이 찍히면 Ctrl+C. 비행 중에 끝내려면 키 L (또는 pxh> commander land → 착지 확인 → Ctrl+C)
+#   끝내기: DONE 이 찍히면 5 → 3 → 2 → 1 순서로 Ctrl+C (4 는 아무 때나)
+#     비행 중에 끝내려면 pxh> commander land → 약 1초 뒤 안전장치로 DONE → 착지 확인 → Ctrl+C
 #     (비행 중에 이 노드를 먼저 끄면 1초 뒤 PX4 가 'Offboard 신호 끊김' 비상 동작으로 넘어간다)
-#   다시 비행: PX4(터미널 1)도 다시 시작 — 그대로 켜면 그 자리에서 이륙해 '이미 도착'으로 바로 착륙한다
+#   다시 비행: PX4(터미널 1)도 다시 시작 — 노드만 다시 켜면 그 자리에서 이륙해 '이미 도착'으로 바로 착륙한다
 #
 #   결함 주입 (fault injection) — 일부러 문제를 넣고 시스템이 어떻게 반응하는지 본다:
-#     브리지(터미널 3) Ctrl+C → HOLD → 다시 실행 → 1.0초 뒤 CRUISE   /   10초 안에 안 켜면 LAND
-#     pxh> commander mode auto:loiter → 1초 뒤 DONE, 다시 요청하지 않음 → pxh> commander land
+#     브리지(터미널 3) Ctrl+C → 0.5초 뒤 HOLD (7 · 8번 줄) → 다시 실행 → 스캔이 1초 이어지면 CRUISE (10번 줄)
+#                                                    / 10초 안에 복구되지 않으면 LAND (9번 줄)
+#     (브리지는 다시 뜨는 데 몇 초 걸린다 — HOLD 가 찍히면 바로 다시 실행)
+#
+#   참고: fly 를 빼면 드라이 런 (비행하지 않음, PX4·Agent 없어도 됨 — 브리지 터미널 3 은 끈다):
+#     ros2 run drone_ros2_advanced w12_mission
+#     (새 터미널) ros2 topic pub -r 10 /lidar/scan sensor_msgs/msg/LaserScan \
+#                   "{angle_min: -1.0472, angle_increment: 1.0472, range_min: 0.1, range_max: 30.0, ranges: [2.0, 5.0, .inf]}"
+#     → 칸 3개 = −60° · 0° · +60° = 오른쪽 · 앞 · 왼쪽. ranges 를 바꾸면 전이가 일어난다
+#       [2.0, 1.2, .inf] → AVOID  /  [2.0, 5.0, .inf] → CRUISE  /  [2.0, -.inf, .inf] → HOLD (너무 가까움)
+#       [0.8, 1.2, 0.8] → AVOID → 막다른 곳 → 안전장치 → LAND → DONE
+#     ※ ranges 를 바꾸려면 발행을 껐다 켜야 하므로, 드라이 런은 발행이 끊겨도 마지막 스캔을 계속 쓴다
+#       (신호 끊김은 비행 중 브리지 끄기로 확인)
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced
@@ -78,7 +83,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profi
 from rcl_interfaces.msg import ParameterDescriptor
 from px4_msgs.msg import VehicleLocalPosition
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Float32MultiArray, String
+from std_msgs.msg import String
 
 from ..px4_base import PX4Base, PX4_QOS
 from ..week11.avoid_base import (   # 11주차 VM 에서 확인한 함수 · 상수를 그대로 쓴다
@@ -87,7 +92,7 @@ from ..week11.avoid_base import (   # 11주차 VM 에서 확인한 함수 · 상
     as_bool, clamp, dist_text, floor2, sector_min, sectors_text, side_name, signed,
 )
 from .mission_table import (
-    AVOID, CRUISE, DONE, HOLD, IDLE, LAND, MANUAL, TAKEOFF, next_state, row_number,
+    AVOID, CRUISE, DONE, HOLD, IDLE, LAND, SAFETY, TAKEOFF, TRANSITIONS, next_state, rule_label,
 )
 
 
@@ -110,14 +115,13 @@ PARAMS = {
 # ── [복붙 영역] 시간 상수 ─────────────────────────────────────────
 ALT_TOL        = 0.2   # 이륙 완료 고도 오차 [m]
 TAKEOVER_TIME  = 1.0   # Offboard 가 아닌 채 이만큼이면 PX4 가 조종권을 가져간 것으로 본다 [s] (상태 메시지 지연 대비)
-MANUAL_TIMEOUT = 0.5   # 키보드 값이 이만큼 안 오면 수동 속도 0 [s]
 LAND_RETRY     = 2.0   # 착륙 요청 뒤에도 Offboard 면 이 간격으로 다시 요청 [s]
 DRY_WAIT       = 1.0   # 드라이 런: PX4 사건(ready · airborne · landed)이 저절로 생길 때까지 [s]
 
-# 키보드 명령 → 사건 이름
-CMD_EVENTS = {'manual': 'cmd_manual', 'auto': 'cmd_auto', 'land': 'cmd_land'}
+# PX4 비행 모드 이름표 (VehicleStatus.nav_state 번호 → 로그에 찍는 이름). 나머지는 'nav_state 번호'
+NAV_NAMES = {2: 'Position', 4: 'Hold', 5: 'Return', 14: 'Offboard', 18: 'Land'}
 
-# 상태 토픽 QoS — 나중에 켠 w12_keyboard 도 지금 상태를 바로 받도록 마지막 값을 보관
+# 상태 토픽 QoS — 나중에 켠 w12_state_viewer 도 지금 상태를 바로 받도록 마지막 값을 보관
 STATE_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
 
@@ -144,14 +148,12 @@ class MissionBase(PX4Base):
             self._read_param(name, start=True)
 
         # ============================================================
-        # [USER DEFINE] 구독 4개 · 발행 2개
+        # [USER DEFINE] 구독 2개 · 발행 2개
         # ============================================================
         self.create_subscription(
             LaserScan, '/lidar/scan', self._scan_callback, qos_profile_sensor_data)
         self.create_subscription(
             VehicleLocalPosition, '/fmu/out/vehicle_local_position', self._position_callback, PX4_QOS)
-        self.create_subscription(String, '/sjcu/mission_cmd', self._cmd_callback, 10)
-        self.create_subscription(Float32MultiArray, '/sjcu/manual_cmd', self._manual_callback, 1)
         self.state_pub = self.create_publisher(String, '/sjcu/mission_state', STATE_QOS)
         self.transition_pub = self.create_publisher(String, '/sjcu/mission_transition', 10)
 
@@ -162,9 +164,6 @@ class MissionBase(PX4Base):
         self.good_since = None    # 유효한 스캔이 끊기지 않고 이어진 첫 시각 [s]
         self.neg        = 0       # 마지막 스캔의 -inf 칸 수 (너무 가까움)
         self.bad_logged = False   # '칸 정보가 이상한 스캔' 경고를 한 번만
-        self.cmds       = set()   # 다음 틱에 쓸 사람 명령 사건
-        self.manual     = (0.0, 0.0)   # 키보드 몸체 속도 [m/s]
-        self.manual_at  = None    # 그 값을 받은 시각 [s]
         self.sec        = {}      # 이번 틱의 섹터 값 (None = 측정 없음, 빈 사전 = 스캔 끊김)
         self.off_since  = None    # Offboard 가 아닌 것을 처음 본 시각 [s]
 
@@ -183,17 +182,17 @@ class MissionBase(PX4Base):
         self.last_tag    = None   # 직전에 찍은 줄 태그 (바뀌면 바로 한 줄)
         self.last_log_at = -math.inf
 
-        # 진입 동작(들어갈 때 한 번) · 상태의 일(매 틱)
+        # 들어갈 때 한 번 하는 일 · 상태의 일(매 틱)
         self.enter = {TAKEOFF: self._enter_takeoff, AVOID: self._enter_avoid, HOLD: self._enter_hold,
-                      MANUAL: self._enter_manual, LAND: self._enter_land, DONE: self._enter_done}
+                      LAND: self._enter_land, DONE: self._enter_done}
         self.do = {IDLE: self._do_idle, TAKEOFF: self._do_takeoff, CRUISE: self._do_cruise, AVOID: self._do_avoid,
-                   HOLD: self._do_hold, MANUAL: self._do_manual, LAND: self._do_land, DONE: self._do_done}
+                   HOLD: self._do_hold, LAND: self._do_land, DONE: self._do_done}
 
         self.state_pub.publish(String(data=self.state))
         self.create_timer(0.1, self.on_update)   # 10Hz
 
         mode = '비행 (fly:=true)' if self.fly else '드라이 런 (fly:=false)'
-        hint = ('끝내기: DONE 뒤 Ctrl+C' if self.fly else
+        hint = ('끝내기: DONE 뒤 Ctrl+C · 비행 중에 끝내려면 pxh> commander land' if self.fly else
                 '비행하지 않음 (비행: --ros-args -p fly:=true) — 모의 스캔은 브리지(터미널 3)를 끄고 ros2 topic pub')
         self.get_logger().info(
             f'미션 노드 시작 — {mode} | 전진 속도 {self.cruise_speed:g} m/s | 목표 동 {GOAL_EAST:.1f} m | '
@@ -206,9 +205,10 @@ class MissionBase(PX4Base):
     def on_update(self):
         self._read_params()
         events = self.sense()                         # ① 입력 → 사건 이름들
-        next_s, event = next_state(self.state, events)   # ② 표에서 위 줄부터 찾기
+        # ② 표 밖 안전장치 2줄을 먼저, 그다음 전이 조건표를 위 줄부터 찾기
+        next_s, event = next_state(self.state, events, SAFETY + TRANSITIONS)
         if next_s != self.state:
-            self.go(next_s, event)                    # 로그 · 진입 동작 · 상태 발행은 여기 한 곳
+            self.go(next_s, event)                    # 로그 · 들어갈 때 하는 일 · 상태 발행은 여기 한 곳
         self.do[self.state]()                         # ③ 지금 상태의 일 (명령 1번)
 
     # ============================================================
@@ -216,7 +216,7 @@ class MissionBase(PX4Base):
     # ============================================================
     def sense(self):
         now = time.monotonic()
-        events, self.cmds = self.cmds, set()    # 사람: 키보드 명령 (콜백이 모아 둠)
+        events = set()
         self._sense_px4(events, now)            # PX4: ready · airborne · landed · px4_takeover
 
         # 센서
@@ -285,16 +285,23 @@ class MissionBase(PX4Base):
     def go(self, next_s, event):
         now = time.monotonic()
         prev, why = self.state, self._why(event)    # 왜 바뀌었나 (숫자까지)
-        self.get_logger().info(f'[전이] {prev} → {next_s} | {why}')
+        label = rule_label(prev, event)             # 표의 줄 번호 (int) · 표 밖 안전장치면 'safety'
+        rule = f'안전장치 {event}' if label == 'safety' else f'{label}번 줄 {event}'
+        self.get_logger().info(f'[전이] {prev} → {next_s} | {rule} | {why}')
         self.state, self.state_since = next_s, now
         self.history.append((now - self.start, next_s))
         self.last_tag = None                    # 다음 상태의 첫 줄을 바로 찍음
         if next_s in self.enter:
-            self.enter[next_s]()                # 들어갈 때 한 번만 하는 일 (진입 동작)
-        # 상태 뷰어용 한 줄: 시각 | 전이 | 표의 줄 번호 + 사건 | 이유
+            self.enter[next_s]()                # 들어갈 때 한 번만 하는 일
+        # 상태도 창용 한 줄: 시각 | 전이 | 표의 줄 번호(안전장치면 safety) + 사건 | 이유
         self.transition_pub.publish(String(
-            data=f'{now - self.start:.1f} | {prev} → {next_s} | {row_number(prev, event)} {event} | {why}'))
+            data=f'{now - self.start:.1f} | {prev} → {next_s} | {label} {event} | {why}'))
         self.state_pub.publish(String(data=next_s))
+
+    def _px4_mode(self):
+        """지금 PX4 비행 모드 이름 — 'Land' · 'Offboard' … (이름표에 없으면 'nav_state 번호')"""
+        nav = self.vehicle_status.nav_state
+        return NAV_NAMES.get(nav, f'nav_state {nav}')
 
     def _why(self, event):
         """전이 줄 뒷부분 — 로그만 봐도 숫자로 검산할 수 있게"""
@@ -307,10 +314,9 @@ class MissionBase(PX4Base):
         if event == 'landed':
             return '착지 감지' if self.fly else '착지한 것으로 가정 (드라이 런)'
         if event == 'px4_takeover':
-            nav = self.vehicle_status.nav_state
-            return f'Offboard 가 아닌 채 {TAKEOVER_TIME:g}초 (nav_state {nav}) → 다시 요청하지 않음'
-        if event in ('cmd_manual', 'cmd_auto', 'cmd_land'):
-            return f'사람 명령 {event[4:]}'
+            if self.is_offboard:                # 모드는 Offboard 인데 Arm 이 풀림 (disarm · kill)
+                return f'Arm 이 풀린 채 {TAKEOVER_TIME:g}초 (PX4 모드: Offboard) → 다시 요청하지 않음'
+            return f'Offboard 가 아닌 채 {TAKEOVER_TIME:g}초 (PX4 모드: {self._px4_mode()}) → 다시 요청하지 않음'
         if event == 'sensor_bad':
             if self.neg > 0 and self.sec:
                 return f'-inf {self.neg}칸 (너무 가까움)'
@@ -332,7 +338,7 @@ class MissionBase(PX4Base):
             return f'앞 {dist_m(s.get("front"))} ≥ 해제 {CLEAR_DIST:.1f} m'
         return event
 
-    # ── 진입 동작 ────────────────────────────────────────────────
+    # ── 들어갈 때 한 번 하는 일 ──────────────────────────────────
     def _enter_takeoff(self):
         self.takeoff_xy = self._here()          # 지금 자리에서 이륙 (0, 0 으로 쓰면 다시 켰을 때 원점으로 날아간다)
 
@@ -348,10 +354,6 @@ class MissionBase(PX4Base):
     def _enter_hold(self):
         self.last_vx = self.last_vy = 0.0       # 속도는 가속도 제한 없이 바로 0
 
-    def _enter_manual(self):
-        self.manual, self.manual_at = (0.0, 0.0), None
-        self.get_logger().info('[MANUAL] 사람이 조종 — W·A·S·D 이동 · Space 정지 · G 자율로 돌려주기 · L 착륙')
-
     def _enter_land(self):
         self.land_at = time.monotonic()
         if self.fly:
@@ -360,9 +362,10 @@ class MissionBase(PX4Base):
     def _enter_done(self):
         record = ' | '.join(f'{t:.1f} {name}' for t, name in self.history)
         self.get_logger().info(f'[미션 기록] {record}')
-        self.heartbeat_timer.cancel()           # Offboard 신호도 멈춤 = 완전히 손을 뗌
-        if self.fly and not self.is_landed:
-            self.get_logger().warn('PX4 가 조종 중 — 이 노드는 더 보내지 않음. 끝내기: pxh> commander land → 착지 확인 → Ctrl+C')
+        self.heartbeat_timer.cancel()           # Offboard 신호도 멈춤 = 명령을 완전히 멈춤 (조종권을 넘김)
+        if self.fly and not self.is_landed:     # 공중에서 안전장치 px4_takeover 로 옴 (사람 · PX4 가 모드를 바꿈)
+            self.get_logger().warn(f'PX4 가 조종 중 (PX4 모드: {self._px4_mode()}) — 이 노드는 명령을 멈춤. '
+                                   '착지 확인 뒤 Ctrl+C (공중에 멈춰 있으면 pxh> commander land)')
         else:
             self.get_logger().info('미션 끝 — Ctrl+C 로 노드를 끄세요')
 
@@ -416,14 +419,6 @@ class MissionBase(PX4Base):
         scan = f'스캔 복구 {now - self.good_since:.1f} / {RECOVER_TIME:.1f}초' if self.sec and self.neg == 0 else '스캔 없음'
         self._report('HOLD', None, f'[HOLD] 대기 {now - self.state_since:.1f} / {self.hold_timeout:g}초 | {scan} | 수평 정지 · 고도 유지')
 
-    def _do_manual(self):
-        now = time.monotonic()
-        fresh = self.manual_at is not None and now - self.manual_at <= MANUAL_TIMEOUT
-        vx_t, vy_t = self.manual if fresh else (0.0, 0.0)   # 키보드 입력이 끊기면 0
-        vx, vy, note = self._send(vx_t, vy_t)
-        wait = '' if fresh else ' | 키보드 입력 없음'
-        self._report('MANUAL', note, f'[MANUAL] {self._where()}vx {vx:+.2f} · vy {vy:+.2f} m/s{wait}')
-
     def _do_land(self):
         if not self.fly or not self.is_offboard:   # PX4 착륙 모드 — 내려가는 일은 PX4 가 한다
             return
@@ -468,9 +463,9 @@ class MissionBase(PX4Base):
     def _send(self, vx_t, vy_t):
         vx, vy = self._ramp(vx_t, vy_t) if self.fly else (vx_t, vy_t)
         note = None                             # 안전 필터가 바꿨으면 (태그, 글자)
-        if not self.sec:                        # 스캔 끊김 (MANUAL, 또는 HOLD 로 가기 전 한 틱): 측정 없음 = 막힘
-            vx, vy = min(vx, 0.0), 0.0
-            note = ('스캔 없음', '[스캔 없음] 전진 · 좌우 이동 막힘 (수동 조종이면 후진 · L 착륙은 가능)')
+        if not self.sec:                        # 스캔 끊김 (TAKEOFF → CRUISE 직후 한 틱 — 다음 틱에 HOLD 로): 측정 없음 = 막힘
+            vx, vy = 0.0, 0.0
+            note = ('스캔 없음', '[스캔 없음] 전진 · 좌우 이동 막힘')
         else:
             near = self._sec_value('near')
             if vx > 0.0 and near < SAFE_DIST:   # 근접: 전진만 0 (좌우 이동은 허용 → 빠져나올 수 있게)
@@ -488,8 +483,7 @@ class MissionBase(PX4Base):
             if (p.x > LAT_LIMIT and n_dot > 0.0) or (p.x < -LAT_LIMIT and n_dot < 0.0):
                 vy = 0.0
                 note = ('지오펜스', f'[지오펜스] 북 {signed(p.x)} m → 바깥쪽 이동 정지')
-        if self.state != MANUAL:                # 사각지대: 뒤 90° 는 측정하지 않으므로 후진 없음
-            vx = max(vx, 0.0)
+        vx = max(vx, 0.0)                       # 사각지대: 뒤 90° 는 측정하지 않으므로 후진 없음 (어느 상태든)
         if self.fly:
             self.last_vx, self.last_vy = vx, vy
             # PX4Base: 몸체 속도 → 기수 방향으로 NED 로 돌려 보냄 (6주차). 요 각속도 0 → 기수 그대로
@@ -535,22 +529,6 @@ class MissionBase(PX4Base):
 
     def _position_callback(self, msg: VehicleLocalPosition):
         self.position = msg
-
-    def _cmd_callback(self, msg: String):
-        word = msg.data.strip().lower()
-        event = CMD_EVENTS.get(word)
-        if event is None:
-            self.get_logger().warn(f'[명령] 모르는 명령 "{msg.data}" — manual · auto · land 중 하나')
-        elif next_state(self.state, {event})[1] is None:   # 표에 없는 사건은 무시된다
-            self.get_logger().info(f'[명령] {word} — {self.state} 에는 이 사건을 받는 줄이 없어 무시')
-        else:
-            self.cmds.add(event)
-
-    def _manual_callback(self, msg: Float32MultiArray):
-        if len(msg.data) < 2:
-            return
-        self.manual = (clamp(float(msg.data[0]), MAX_CRUISE), clamp(float(msg.data[1]), MAX_CRUISE))
-        self.manual_at = time.monotonic()
 
     # ============================================================
     # 도우미
@@ -625,7 +603,7 @@ class MissionBase(PX4Base):
         for name in PARAMS:
             self._read_param(name)
         if as_bool(self.get_parameter('fly').value) != self.fly:
-            self.get_logger().warn('fly 는 시작할 때만 읽습니다 — 바꾸려면 노드를 다시 실행 (비행 중이면 키 L 먼저)',
+            self.get_logger().warn('fly 는 시작할 때만 읽습니다 — 바꾸려면 노드를 다시 실행 (비행 중이면 pxh> commander land 먼저)',
                                    throttle_duration_sec=5.0)
 
     def _read_param(self, name, start=False):
