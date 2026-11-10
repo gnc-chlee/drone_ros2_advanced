@@ -6,7 +6,7 @@
 # Version : 1.1.0   (2026-11-10 단순화)
 #
 # Description:
-#   미션 상태 뷰어 — 상태도에서 지금 상태에 불이 들어오고, 방금 쓰인 표의 줄 번호가 보인다
+#   미션 상태 뷰어 — 상태도에서 현재 상태 = 빨강, 방금 쓰인 표의 줄 번호 표시
 #   PX4 에 명령을 보내지 않는다 → 언제 켜고 꺼도 미션에 영향이 없다 (드라이 런에서도 동작)
 #   그림은 21강 시뮬레이터(w12_fsm_sim)와 같다 (state_view.py — 화살표는 전이 조건표 10줄만)
 #
@@ -17,7 +17,7 @@
 #     아래   : 최근 60초 상태 띠 + 앞 거리(±30°) 곡선, 1.5 m 정지 판단 · 2.0 m 해제 선 (히스테리시스)
 #
 #   구독 토픽:
-#     /sjcu/mission_state      : String 상태 이름 (w12_mission — 나중에 켜도 지금 상태를 받음)
+#     /sjcu/mission_state      : String 상태 이름 (w12_mission — 나중에 켜도 현재 상태를 받음)
 #     /sjcu/mission_transition : String 전이 한 줄 '15.4 | CRUISE → AVOID | 3 front_blocked | …' (w12_mission)
 #                                안전장치면 '41.2 | CRUISE → DONE | safety px4_takeover | …'
 #     /lidar/scan              : LaserScan — 앞 거리는 미션 노드와 같은 함수(sector_min)로 계산

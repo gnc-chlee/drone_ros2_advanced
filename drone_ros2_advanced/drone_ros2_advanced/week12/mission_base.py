@@ -6,23 +6,23 @@
 # Version : 1.1.0   (2026-11-10 단순화)
 #
 # Description:
-#   11주차 회피 미션을 상태머신으로 다시 쓴 노드 — 켜면 이륙부터 착륙까지 스스로 끝난다
+#   11주차 회피 미션을 상태머신으로 다시 쓴 노드 — 실행하면 이륙부터 착륙까지 자동 수행
 #   (PX4Base 상속 · 전이 조건표는 mission_table.py · 섹터 계산과 상수는 week11/avoid_base.py 에서 가져옴)
 #
-#   0.1초마다 세 단계뿐 (on_update):
-#     ① sense()      : 입력(PX4 상태 · 스캔 · 시간) → 사건 이름들 (지금 맞는 사건을 모두)
-#     ② next_state() : 표 밖 안전장치 2줄을 먼저, 그다음 전이 조건표를 위 줄부터 찾기 → 다음 상태
-#     ③ do[상태]()   : 지금 상태의 일 (명령 1번)
-#     상태가 바뀌는 곳은 go() 한 곳뿐: [전이] 로그 → 들어갈 때 한 번 하는 일 → 전이 · 상태 발행
+#   0.1초 주기로 세 단계 반복 (on_update):
+#     ① sense()      : 사건 판정 — 입력(PX4 상태 · 스캔 · 시간) → 사건 이름들 (조건이 충족된 사건 모두)
+#     ② next_state() : 표 조회 — 표 밖 안전장치 2줄을 먼저, 그다음 전이 조건표를 위 줄부터 → 다음 상태
+#     ③ do[상태]()   : 상태별 동작 (명령 1번)
+#     상태 전이는 go() 한 곳에서만: [전이] 로그 → 들어갈 때 한 번 하는 일 → 전이 · 상태 발행
 #
 #   11주차와 달라진 점:
-#     - 도착 · 신호 끊김 · 막다른 곳이 호버로 끝나지 않고 나가는 길이 있다
+#     - 도착 · 신호 끊김 · 막다른 곳이 호버로 끝나지 않고 나가는 전이가 있다
 #       (도착 = 5번 줄 LAND · 신호 끊김 = 7 · 8번 줄 HOLD → 10번 CRUISE 또는 9번 LAND · 막다른 곳 = 안전장치 LAND)
-#     - 노드가 상태에 따라 PX4 비행 모드를 바꾼다: IDLE 에서 Offboard + Arm 요청 · LAND 에서 Land 요청 · DONE 에서 명령을 멈춤
+#     - 노드가 상태에 따라 PX4 비행 모드를 바꾼다: IDLE 에서 Offboard + Arm 요청 · LAND 에서 Land 요청 · DONE 에서 명령 중단
 #
 #   표 밖 안전장치 2줄 (mission_table.SAFETY — 표보다 먼저 본다, 전이 로그에는 '안전장치'):
 #     px4_takeover : 비행 중 Offboard 가 아닌 채 1초 (사람이 pxh> commander land · PX4 비상 동작)
-#                    → DONE: 다시 요청하지 않고 명령을 멈춘다 (조종권을 넘김)
+#                    → DONE: 재요청 없이 명령 중단 (조종권 이양)
 #     dead_end     : AVOID 에서 막다른 곳 (양옆 막힘 · 재탐색 뒤에도 막힘 · 30초) → LAND
 #
 #   안전 필터는 상태와 별개 (_send, 명령을 보내기 직전에 매 틱):
@@ -67,7 +67,7 @@
 #       [2.0, 1.2, .inf] → AVOID  /  [2.0, 5.0, .inf] → CRUISE  /  [2.0, -.inf, .inf] → HOLD (너무 가까움)
 #       [0.8, 1.2, 0.8] → AVOID → 막다른 곳 → 안전장치 → LAND → DONE
 #     ※ ranges 를 바꾸려면 발행을 껐다 켜야 하므로, 드라이 런은 발행이 끊겨도 마지막 스캔을 계속 쓴다
-#       (신호 끊김은 비행 중 브리지 끄기로 확인)
+#       (신호 끊김은 비행 중 브리지 종료로 확인)
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced
@@ -121,7 +121,7 @@ DRY_WAIT       = 1.0   # 드라이 런: PX4 사건(ready · airborne · landed)�
 # PX4 비행 모드 이름표 (VehicleStatus.nav_state 번호 → 로그에 찍는 이름). 나머지는 'nav_state 번호'
 NAV_NAMES = {2: 'Position', 4: 'Hold', 5: 'Return', 14: 'Offboard', 18: 'Land'}
 
-# 상태 토픽 QoS — 나중에 켠 w12_state_viewer 도 지금 상태를 바로 받도록 마지막 값을 보관
+# 상태 토픽 QoS — 나중에 켠 w12_state_viewer 도 현재 상태를 바로 받도록 마지막 값을 보관
 STATE_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
 
@@ -182,7 +182,7 @@ class MissionBase(PX4Base):
         self.last_tag    = None   # 직전에 찍은 줄 태그 (바뀌면 바로 한 줄)
         self.last_log_at = -math.inf
 
-        # 들어갈 때 한 번 하는 일 · 상태의 일(매 틱)
+        # 들어갈 때 한 번 하는 일 · 상태별 동작(매 틱)
         self.enter = {TAKEOFF: self._enter_takeoff, AVOID: self._enter_avoid, HOLD: self._enter_hold,
                       LAND: self._enter_land, DONE: self._enter_done}
         self.do = {IDLE: self._do_idle, TAKEOFF: self._do_takeoff, CRUISE: self._do_cruise, AVOID: self._do_avoid,
@@ -204,15 +204,15 @@ class MissionBase(PX4Base):
     # ============================================================
     def on_update(self):
         self._read_params()
-        events = self.sense()                         # ① 입력 → 사건 이름들
-        # ② 표 밖 안전장치 2줄을 먼저, 그다음 전이 조건표를 위 줄부터 찾기
+        events = self.sense()                         # ① 사건 판정: 입력 → 사건 이름들
+        # ② 표 조회: 표 밖 안전장치 2줄을 먼저, 그다음 전이 조건표를 위 줄부터
         next_s, event = next_state(self.state, events, SAFETY + TRANSITIONS)
         if next_s != self.state:
             self.go(next_s, event)                    # 로그 · 들어갈 때 하는 일 · 상태 발행은 여기 한 곳
-        self.do[self.state]()                         # ③ 지금 상태의 일 (명령 1번)
+        self.do[self.state]()                         # ③ 상태별 동작 (명령 1번)
 
     # ============================================================
-    # ① 사건 만들기 — 입력을 사건 이름으로 바꿀 뿐, 판단은 표가 한다
+    # ① 사건 판정 — 입력을 사건 이름으로 바꿀 뿐, 다음 상태는 표가 정한다
     # ============================================================
     def sense(self):
         now = time.monotonic()
@@ -362,15 +362,15 @@ class MissionBase(PX4Base):
     def _enter_done(self):
         record = ' | '.join(f'{t:.1f} {name}' for t, name in self.history)
         self.get_logger().info(f'[미션 기록] {record}')
-        self.heartbeat_timer.cancel()           # Offboard 신호도 멈춤 = 명령을 완전히 멈춤 (조종권을 넘김)
+        self.heartbeat_timer.cancel()           # Offboard 신호도 중단 = 명령 완전 중단 (조종권 이양)
         if self.fly and not self.is_landed:     # 공중에서 안전장치 px4_takeover 로 옴 (사람 · PX4 가 모드를 바꿈)
-            self.get_logger().warn(f'PX4 가 조종 중 (PX4 모드: {self._px4_mode()}) — 이 노드는 명령을 멈춤. '
+            self.get_logger().warn(f'PX4 가 조종 중 (PX4 모드: {self._px4_mode()}) — 이 노드는 명령 중단 (조종권 이양). '
                                    '착지 확인 뒤 Ctrl+C (공중에 멈춰 있으면 pxh> commander land)')
         else:
             self.get_logger().info('미션 끝 — Ctrl+C 로 노드를 끄세요')
 
     # ============================================================
-    # ③ 상태의 일 — 매 틱 명령 1번 (LAND · DONE 은 명령 없음)
+    # ③ 상태별 동작 — 매 틱 명령 1번 (LAND · DONE 은 명령 없음)
     # ============================================================
     def _do_idle(self):
         live = self._scan_live(time.monotonic())

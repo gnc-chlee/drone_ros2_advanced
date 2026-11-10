@@ -7,28 +7,28 @@
 #
 # Description:
 #   전이 조건표 시뮬레이터 — PX4 · Gazebo 없이 터미널 하나로 표를 시험한다
-#   여러분이 PX4 · 센서 역할: 일어난 일(사건)의 이름을 넣으면 표대로 상태가 바뀐다
+#   사용자가 PX4 · 센서 역할: 사건(일어난 일) 이름을 입력하면 표에 따라 상태가 바뀐다
 #   표는 22강 미션 노드와 같은 파일(mission_table.py)
-#   상태도 창: 지금 상태에 불이 들어오고, 방금 쓰인 줄의 화살표가 빨개진다 (22강 w12_state_viewer 와 같은 그림)
-#     입력은 터미널에 한다 (창은 보기만). 창이 앞에 오면 터미널을 한 번 클릭. v = 창 끄기·켜기
+#   상태도 창: 현재 상태 = 빨강, 방금 쓰인 줄의 화살표 = 빨강 (22강 w12_state_viewer 와 같은 그림)
+#     입력은 터미널에 한다 (창은 표시 전용). 창이 앞에 오면 터미널을 한 번 클릭. v = 창 끄기·켜기
 #     OpenCV 가 없거나 화면이 없으면(SSH 등) 창 없이 터미널만으로 된다
 #
 #   실행 방법:
 #     ros2 run drone_ros2_advanced w12_fsm_sim
 #
-#   따라 하기 (사건 이름을 한 줄에 하나씩):
+#   따라 하기 (사건 이름을 한 줄에 하나씩 입력):
 #     정상 미션 : ready → airborne → front_blocked → front_clear → arrived → landed
-#                 (표 1 → 2 → 3 → 4 → 5 → 6 번 줄, 창의 화살표가 번호 순서로 빨개짐)
-#     복구      : r → ready → airborne → sensor_bad → sensor_ok      (7 → 10번 줄, CRUISE 로 돌아감)
+#                 (1 → 2 → 3 → 4 → 5 → 6번 줄 순서로 전이 → DONE, 창의 화살표도 같은 순서로 빨강)
+#     복구      : r → ready → airborne → sensor_bad → sensor_ok      (7 → 10번 줄, CRUISE 복귀)
 #     타임아웃  : r → ready → airborne → sensor_bad → hold_timeout   (7 → 9번 줄, LAND)
-#     ※ 이름은 2글자 이상 앞부분만 쳐도 된다 (re = ready). 한 줄에 여러 이름을 띄어 쓰면 차례로 넣은 것과 같다
+#     ※ 이름은 2글자 이상 앞부분만 입력해도 된다 (re = ready). 한 줄에 여러 이름을 띄어 쓰면 차례로 입력한 것과 같다
 #     ※ (심화) 같은 순간에 생긴 사건은 + 로 잇는다: arrived+front_blocked → 위 줄이 먼저 (3번 줄 → AVOID)
 #
-#   결함 주입 (fault injection) — 일부러 문제를 넣고 시스템이 어떻게 반응하는지 본다. 파일은 그대로:
-#     r → del 9 10 : HOLD 에서 나가는 줄을 지우면 점검이 자동으로 'DONE 까지 못 가는 상태 (갇힘) : HOLD'
+#   결함 주입 (fault injection) — 일부러 문제를 넣고 시스템이 어떻게 반응하는지 본다. 표 파일은 바뀌지 않음:
+#     r → del 9 10 : HOLD 에서 나가는 줄을 삭제하면 점검이 자동으로 'DONE 에 도달할 수 없는 상태 (교착 상태) : HOLD'
 #                    (창에서 화살표 9 · 10 이 사라지고 HOLD 에 빨간 점선)
-#                    → ready → airborne → sensor_bad → sensor_ok → '맞는 줄 없음 → HOLD 그대로'
-#     r            : 표와 상태를 처음대로
+#                    → ready → airborne → sensor_bad → sensor_ok → '해당 줄 없음 → HOLD 유지'
+#     r            : 표와 상태 초기화
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced
@@ -46,7 +46,7 @@ import unicodedata
 
 from .mission_table import DONE, EVENTS, IDLE, SAFETY, STATES, TRANSITIONS, check_table, next_state
 
-EVENT_NAMES = [name for _, name, _ in EVENTS]          # 칠 수 있는 사건 9개
+EVENT_NAMES = [name for _, name, _ in EVENTS]          # 입력할 수 있는 사건 9개
 SAFETY_NAMES = [event for _, event, _ in SAFETY]       # 표 밖 안전장치 사건 (22강 미션 노드에만)
 OLD_COMMANDS = ('c', 's', 'swap')                      # 단순화 전에 있던 명령 (지금은 없음)
 WINDOW = 'w12_fsm_sim'
@@ -66,8 +66,8 @@ def _shown(s):
 
 def help_text():
     lines = ['상태머신 시뮬레이터 (w12_fsm_sim) — PX4 없이 전이 조건표만 시험합니다',
-             '여러분이 PX4 · 센서 역할입니다. 일어난 일(사건)의 이름을 한 줄에 하나씩 넣으면',
-             '표대로 상태가 바뀝니다']
+             '사용자가 PX4 · 센서 역할입니다. 사건(일어난 일) 이름을 한 줄에 하나씩 입력하면',
+             '표에 따라 상태가 바뀝니다']
     groups = []
     for group, _, _ in EVENTS:
         if group not in groups:
@@ -84,7 +84,7 @@ def help_text():
                 line += ' · '
             line += item
         lines.append(line)
-    lines.append('명령: t 표 · del N 줄 지우기 · r 처음대로 · v 상태도 창 · h 도움말 · q 끝')
+    lines.append('명령: t 표 · del N 줄 삭제 · r 초기화 · v 상태도 창 · h 도움말 · q 종료')
     return '\n'.join(lines)
 
 
@@ -94,9 +94,9 @@ class Sim:
 
     # ── 표 ──────────────────────────────────────────────────────
     def restore(self):
-        """표를 처음대로 + 상태도 IDLE 로. 줄 번호는 처음 번호를 계속 쓴다 (지워도 안 변함)"""
+        """표 초기화 + 상태도 IDLE 로. 줄 번호는 처음 번호를 계속 쓴다 (삭제해도 안 변함)"""
         self.rows = list(enumerate(TRANSITIONS, 1))     # [(줄 번호, 줄), ...]
-        self.check = None                               # 마지막 점검 결과 (창에 표시, r 로 지움)
+        self.check = None                               # 마지막 점검 결과 (창에 표시, r 로 초기화)
         self.restart()
 
     def restart(self):
@@ -120,13 +120,13 @@ class Sim:
         return None
 
     def changed(self):
-        """표를 바꾼 내용 (창 표시용): 'deleted 9 10' · 그대로면 ''"""
+        """표를 바꾼 내용 (창 표시용): 'deleted 9 10' · 바꾸지 않았으면 ''"""
         labels = self._labels()
         deleted = [n for n in range(1, len(TRANSITIONS) + 1) if n not in labels]
         return 'deleted ' + ' '.join(map(str, deleted)) if deleted else ''
 
     def out_events(self, state):
-        """지금 표에서 state 에서 나가는 줄의 사건들 (표 순서)"""
+        """현재 표에서 state 에서 나가는 줄의 사건들 (표 순서)"""
         out = []
         for _, (froms, event, _) in self.rows:
             if state in froms and event not in out:
@@ -134,23 +134,23 @@ class Sim:
         return out
 
     def out_hint(self, state):
-        """'(CRUISE 에서 표에 있는 사건: front_blocked · arrived · sensor_bad)' — 나가는 줄이 없으면 갇힘"""
+        """'(CRUISE 에서 표에 있는 사건: front_blocked · arrived · sensor_bad)' — 나가는 줄이 없으면 교착 상태"""
         events = self.out_events(state)
         if not events:
-            return f'  ({state} 에서 나가는 줄이 없습니다 — 갇힘)'
+            return f'  ({state} 에서 나가는 줄 없음 — 교착 상태)'
         return f'  ({state} 에서 표에 있는 사건: {" · ".join(events)})'
 
-    # ── 사건 넣기 (같은 순간 사건이 여럿이면 events 에 함께) ──────
+    # ── 사건 입력 (같은 순간 사건이 여럿이면 events 에 함께) ──────
     def apply(self, events):
         now = self.state
         names = ' · '.join(events)
         head = f'같은 순간 사건 {len(events)}개: {names}' if len(events) > 1 else f'사건 {names}'
         if now == DONE:
-            print(f'  {head} → 미션이 끝났습니다 — r 로 처음부터')
+            print(f'  {head} → 미션이 끝났습니다 — r 로 초기화')
             return
         to, used = next_state(now, set(events), self.table())
         if used is None:
-            print(f'  {head} → 맞는 줄 없음 → {now} 그대로')
+            print(f'  {head} → 해당 줄 없음 → {now} 유지')
             print(self.out_hint(now))
             return
         no = self.row_no(now, used)
@@ -167,14 +167,14 @@ class Sim:
             del self.recent[3:]
         if to == DONE:
             print('  미션 끝: ' + ' → '.join(self.path))
-            print('  (끝 — r 로 처음부터)')
+            print('  (끝 — r 로 초기화)')
         else:
             print(self.out_hint(to))
 
     # ── 표 보기 · 점검 ──────────────────────────────────────────
     def show_table(self):
         group_of = {name: group for group, name, _ in EVENTS}
-        print(' 줄  지금 상태  사건           다음 상태')
+        print(' 줄  현재 상태  사건           다음 상태')
         group = None
         for label, (froms, event, to) in self.rows:
             if group_of.get(event) != group:              # 구분이 바뀌면 머리줄 (미션 · 페일세이프)
@@ -182,19 +182,19 @@ class Sim:
                 print(f'     ── {group} ──')
             print(f'{label:>3}  {" ".join(froms):<10} {event:<14} {to}')
         if self.changed():
-            print('  (지운 줄: ' + self.changed()[len('deleted '):] + ' — r 로 되돌리기)')
+            print('  (삭제한 줄: ' + self.changed()[len('deleted '):] + ' — r 로 초기화)')
 
     def show_check(self):
         unreachable, no_finish = self.check = check_table(self.table())
         print('표 점검')
-        print('  IDLE 에서 갈 수 없는 상태     : ' + (' '.join(unreachable) or '없음'))
-        print('  DONE 까지 못 가는 상태 (갇힘) : ' + (' '.join(no_finish) or '없음'))
+        print('  IDLE 에서 도달할 수 없는 상태           : ' + (' '.join(unreachable) or '없음'))
+        print('  DONE 에 도달할 수 없는 상태 (교착 상태) : ' + (' '.join(no_finish) or '없음'))
         if unreachable or no_finish:
-            print('  → 결함 있음 (r 로 되돌리기)')
+            print('  → 결함 있음 (r 로 초기화)')
         else:
             print('  → 통과')
 
-    # ── 결함 주입: 줄 지우기 (지우면 점검이 저절로 나온다) ────────
+    # ── 결함 주입: 줄 삭제 (삭제하면 점검 자동 실행) ──────────────
     def delete(self, numbers):
         numbers = list(dict.fromkeys(numbers))          # 같은 번호 두 번은 한 번으로
         for n in numbers:
@@ -202,7 +202,7 @@ class Sim:
                 print(f'  {n}번 줄이 없습니다 (t 로 표 확인)')
                 return
         self.rows = [(label, row) for label, row in self.rows if label not in numbers]
-        print('  ' + ' · '.join(f'{n}번' for n in numbers) + ' 줄 지움')
+        print('  ' + ' · '.join(f'{n}번' for n in numbers) + ' 줄 삭제')
         self.show_check()
 
     # ── 입력 한 줄 처리 (q 면 False) ────────────────────────────
@@ -220,7 +220,7 @@ class Sim:
             self.show_table()
         elif head == 'r':
             self.restore()
-            print('  표와 상태를 처음대로 (상태 IDLE)')
+            print('  표와 상태 초기화 (상태 IDLE)')
             print(self.out_hint(IDLE))
         elif head in ('h', 'help'):
             print(help_text())
@@ -231,7 +231,7 @@ class Sim:
             else:
                 print('  사용법: del 9   또는   del 9 10')
         elif head in OLD_COMMANDS:
-            print(f'  모르는 입력: {_shown(line.strip())}  (h = 도움말)')
+            print(f'  알 수 없는 입력: {_shown(line.strip())}  (h = 도움말)')
         else:
             steps = []                                  # 단어마다 [사건, ...] — 하나라도 모르면 아무것도 안 함
             for word in words:
@@ -244,7 +244,7 @@ class Sim:
                     if name not in names:
                         names.append(name)
                 if not names:                           # '+' 만 친 경우
-                    print(f'  모르는 입력: {_shown(word)}  (h = 도움말)')
+                    print(f'  알 수 없는 입력: {_shown(word)}  (h = 도움말)')
                     return True
                 steps.append(names)
             for names in steps:                         # 차례로 (두 번 입력한 것과 같음)
@@ -258,18 +258,18 @@ class Sim:
         if w in EVENT_NAMES:
             return w, None
         if not w.isprintable():                         # 화살표 키 ↑ 는 ESC[A 로 들어온다 (이 입력에는 줄 편집 기능이 없음)
-            return None, '화살표 키(↑ ↓)는 쓰지 않습니다 — 사건 이름을 다시 쳐 주세요 (예: ready)'
+            return None, '화살표 키(↑ ↓)는 쓰지 않습니다 — 사건 이름을 다시 입력하세요 (예: ready)'
         if w in ('t', 'r', 'h', 'del', 'v', 'q'):
             return None, f'{w} 는 명령입니다 — 명령은 줄 맨 앞에 (예: r ready airborne)'
         if not w.isascii():
             return None, '한글이 입력됐습니다 — 한/영 키로 영문 입력으로'
         if w.isdigit():
-            return None, '숫자는 표의 줄 번호입니다 — 사건은 이름으로 (예: ready). 줄 지우기: del 9 10'
+            return None, '숫자는 표의 줄 번호입니다 — 사건은 이름으로 (예: ready). 줄 삭제: del 9 10'
         if w in SAFETY_NAMES:
             return None, f'{w} 는 표 밖 안전장치 사건 — 22강 미션 노드에만 있습니다'
         if w.upper() in STATES:
             events = self.out_events(self.state)
-            return None, (f'{w.upper()} 는 상태 이름입니다 — 일어난 일(사건)을 넣으세요. '
+            return None, (f'{w.upper()} 는 상태 이름입니다 — 사건(일어난 일) 이름을 입력하세요. '
                           f'{self.state} 에서 표에 있는 사건: {" · ".join(events) or "없음"}')
         if len(w) >= 2:
             hits = [name for name in EVENT_NAMES if name.startswith(w)]
@@ -277,8 +277,8 @@ class Sim:
                 return hits[0], None
             if hits:
                 count = '둘' if len(hits) == 2 else f'{len(hits)}개'
-                return None, f"'{w}' 로 시작하는 사건이 {count}: {' · '.join(hits)} — 조금 더 쳐 주세요"
-        return None, f'모르는 사건: {_shown(word)} — 쓸 수 있는 사건: {" · ".join(EVENT_NAMES)}'
+                return None, f"'{w}' 로 시작하는 사건이 {count}: {' · '.join(hits)} — 몇 글자 더 입력하세요"
+        return None, f'알 수 없는 사건: {_shown(word)} — 입력 가능한 사건: {" · ".join(EVENT_NAMES)}'
 
 
 # ================================================================

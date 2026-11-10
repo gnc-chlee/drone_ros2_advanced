@@ -592,17 +592,17 @@ ros2 topic pub -r 10 /lidar/scan sensor_msgs/msg/LaserScan "{angle_min: -1.0472,
 | `ros2 param set` 이 노드를 못 찾음 / 값이 안 먹음 | 노드 이름 오타 / 범위 밖 값 → `ros2 node list` 에서 `/avoid_base`, 노드 로그의 경고 확인 |
 
 ## 12주차 상태머신 미션 · 모드 전환 (21·22강)
-11주차 회피 미션을 **상태머신, 유한 상태 머신(Finite State Machine, FSM)** 으로 다시 씁니다. 먼저 **전이 조건표(state transition table)** 를 PX4 없이 시뮬레이터로 시험하고(21강), 같은 표를 쓰는 노드 `w12_mission` 을 켜면 이륙부터 착륙까지 스스로 끝납니다(22강, PX4Base). 새 월드·새 기체 없음 — 11주차 `obstacle_world` + `gz_x500_lidar_2d` + `w11_scan_bridge` 그대로.
+11주차 회피 미션을 **상태머신, 유한 상태 머신(Finite State Machine, FSM)** 으로 다시 씁니다. 먼저 **전이 조건표(state transition table)** 를 PX4 없이 시뮬레이터로 시험하고(21강), 같은 표를 쓰는 노드 `w12_mission` 을 실행하면 이륙부터 착륙까지 자동으로 수행합니다(22강, PX4Base). 새 월드·새 기체 없음 — 11주차 `obstacle_world` + `gz_x500_lidar_2d` + `w11_scan_bridge` 그대로.
 
-**볼 곳**: 코드는 읽지 않아도 됩니다. 아래 **전이 조건표 10줄**과, 실행하면 찍히는 **`[전이]` 로그**(로그 한 줄 = 표 한 줄)만 봅니다. 표는 [`week12/mission_table.py`](drone_ros2_advanced/drone_ros2_advanced/week12/mission_table.py) 한 파일에 있고 시뮬레이터와 미션 노드가 같이 씁니다.
+**볼 곳**: 코드는 읽지 않아도 됩니다. 아래 **전이 조건표 10줄**과, 실행하면 출력되는 **`[전이]` 로그**(로그 한 줄 = 표 한 줄)만 봅니다. 표는 [`week12/mission_table.py`](drone_ros2_advanced/drone_ros2_advanced/week12/mission_table.py) 한 파일에 있고 시뮬레이터와 미션 노드가 같이 씁니다.
 
-- **상태(state)** = 지금 하는 일, 7개: `IDLE`(준비) · `TAKEOFF`(이륙) · `CRUISE`(순항) · `AVOID`(회피) · `HOLD`(대기) · `LAND`(착륙) · `DONE`(끝). 한 번에 상태는 하나입니다
-- **사건(event)** = 상태를 바꾸는 계기(일어난 일 — 12강 상태 머신의 '넘어갈 조건'이 생긴 순간), 9개. **전이(transition)** = 다른 상태로 옮겨 감
-- `HOLD` 는 노드 안의 대기 상태입니다 — PX4 는 Offboard 그대로 (PX4 Hold 모드 아님)
+- **상태(state)** = 수행 중인 동작, 7개: `IDLE`(준비) · `TAKEOFF`(이륙) · `CRUISE`(순항) · `AVOID`(회피) · `HOLD`(대기) · `LAND`(착륙) · `DONE`(끝). 현재 상태는 항상 하나입니다
+- **사건(event)** = 상태를 바꾸는 계기(일어난 일 — 12강 상태 머신의 '넘어갈 조건'이 충족된 순간), 9개. **전이(transition)** = 다른 상태로 이동
+- `HOLD` 는 노드 안의 대기 상태입니다 — PX4 는 Offboard 유지 (PX4 Hold 모드 아님)
 
-**전이 조건표** — 한 줄 = 지금 상태 + 사건 → 다음 상태 = **상태도(state diagram)** 의 화살표 하나. 맞는 줄이 없으면 상태는 그대로입니다
+**전이 조건표** — 한 줄 = 현재 상태 + 사건 → 다음 상태 = **상태도(state diagram)** 의 화살표 하나. 해당 줄 없음 → 현재 상태 유지
 
-| 줄 | 지금 상태 | 사건 (뜻) | 다음 상태 |
+| 줄 | 현재 상태 | 사건 (뜻) | 다음 상태 |
 |----|------|------|------|
 | 1 | `IDLE` | `ready` (Offboard + Arm 완료) | `TAKEOFF` |
 | 2 | `TAKEOFF` | `airborne` (이륙 고도 도달) | `CRUISE` |
@@ -615,10 +615,10 @@ ros2 topic pub -r 10 /lidar/scan sensor_msgs/msg/LaserScan "{angle_min: -1.0472,
 | 9 | `HOLD` | `hold_timeout` (HOLD 10초) | `LAND` |
 | 10 | `HOLD` | `sensor_ok` (신호 1초 이어짐) | `CRUISE` |
 
-- 1~6 = 정상 미션. 7~10 = **페일세이프(failsafe)** — 고장이 나도 안전한 쪽으로 가는 동작: 센서 신호가 끊기면 `HOLD` 에서 기다리고, 돌아오면 `CRUISE`, 너무 오래 걸리면(**타임아웃, timeout**) `LAND`
+- 1~6 = 정상 미션. 7~10 = **페일세이프(failsafe)** — 고장 시 안전 동작: 센서 신호 끊김 → `HOLD` 에서 대기 → 복구 시 `CRUISE` · 시간 제한 경과 시(**타임아웃, timeout**) `LAND`
 - 3번 1.5 m 와 4번 2.0 m 를 다르게 둔 것은 20강 히스테리시스 — 경계에서 `CRUISE` ⇄ `AVOID` 가 번갈아 나오지 않게
-- 22강 노드가 사건을 만드는 정확한 조건: `airborne` 상대 고도 2 m ± 0.2 · `front_blocked` 앞 1.5 m 미만 또는 앞쪽 ±45° 1.0 m 미만(근접) · `arrived` 동쪽 11.7 m 넘음(목표 12 m) · `sensor_bad` 유효한 스캔 0.5초 없음 또는 `-inf` 칸(너무 가까움) · `sensor_ok` 유효한 스캔 1.0초 이어짐 · `hold_timeout` `HOLD` 에서 10초(파라미터로 바꿈)
-- 22강 노드에는 표보다 먼저 보는 **표 밖 안전장치** 2개가 더 있습니다 (22강 절의 '표 밖 안전장치 2개')
+- 22강 노드의 사건 판정 조건: `airborne` 상대 고도 2 m ± 0.2 · `front_blocked` 앞 1.5 m 미만 또는 앞쪽 ±45° 1.0 m 미만(근접) · `arrived` 동쪽 11.7 m 넘음(목표 12 m) · `sensor_bad` 유효한 스캔 0.5초 없음 또는 `-inf` 칸(너무 가까움) · `sensor_ok` 유효한 스캔 1.0초 이어짐 · `hold_timeout` `HOLD` 에서 10초(파라미터로 바꿈)
+- 22강 노드에는 표보다 먼저 확인하는 **표 밖 안전장치** 2개가 더 있습니다 (22강 절의 '표 밖 안전장치 2개')
 
 ### 0) 준비 (코드 받기)
 ```bash
@@ -634,10 +634,10 @@ ros2 pkg executables drone_ros2_advanced | grep w12     # 3개: w12_fsm_sim · w
 ```bash
 ros2 run drone_ros2_advanced w12_fsm_sim
 ```
-여러분이 PX4 · 센서 역할입니다. 일어난 일(사건)의 **이름**을 한 줄에 하나씩 넣으면 표대로 상태가 바뀝니다. 켜면 도움말(사건 9개와 뜻 · 명령)이 먼저 나옵니다. 명령: `t` 표 · `del N` 줄 지우기 · `r` 처음대로(표·상태) · `v` 상태도 창 끄기·켜기 · `h` 도움말 · `q` 끝. 파일은 고치지 않습니다.
+사용자가 PX4 · 센서 역할입니다. 사건(일어난 일)의 **이름**을 한 줄에 하나씩 입력하면 표에 따라 상태가 바뀝니다. 실행하면 도움말(사건 9개와 뜻 · 명령)이 먼저 나옵니다. 명령: `t` 표 · `del N` 줄 삭제 · `r` 초기화(표·상태) · `v` 상태도 창 끄기·켜기 · `h` 도움말 · `q` 종료. 표 파일은 수정하지 않습니다.
 
-**상태도 창**이 함께 뜹니다. 지금 상태 = 빨강, 방금 쓰인 줄의 화살표 = 빨강, 지나온 길 = 진한 회색. 화살표 옆 숫자가 표의 줄 번호입니다(화살표 하나 = 줄 하나).
-- 입력은 **터미널에** 합니다. 창은 보기만 합니다. 창이 앞에 오면 터미널을 한 번 클릭하세요
+**상태도 창**이 함께 뜹니다. 현재 상태 = 빨강, 방금 쓰인 줄의 화살표 = 빨강, 지나온 길 = 진한 회색. 화살표 옆 숫자가 표의 줄 번호입니다(화살표 하나 = 줄 하나).
+- 입력은 **터미널에** 합니다. 창은 표시 전용입니다. 창이 앞에 오면 터미널을 한 번 클릭하세요
 - 화면이 없거나(SSH 접속) OpenCV 가 없으면 창 없이 터미널만으로 됩니다
 
 ```
@@ -651,37 +651,37 @@ ros2 run drone_ros2_advanced w12_fsm_sim
 [LAND] > landed
   사건 landed → 6번 줄 → DONE
   미션 끝: IDLE → TAKEOFF → CRUISE → AVOID → CRUISE → LAND → DONE
-  (끝 — r 로 처음부터)
+  (끝 — r 로 초기화)
 ```
-- 괄호 줄 = 지금 상태에서 표에 있는 사건(넣으면 상태가 바뀌는 사건)입니다. 표에 없는 사건은 무시됩니다: `HOLD` 에서 `front_blocked` → `사건 front_blocked → 맞는 줄 없음 → HOLD 그대로`
+- 괄호 줄 = 현재 상태에서 표에 있는 사건(입력하면 상태가 바뀌는 사건)입니다. 표에 없는 사건이면 현재 상태를 유지합니다: `HOLD` 에서 `front_blocked` → `사건 front_blocked → 해당 줄 없음 → HOLD 유지`
 
-| 해 보기 | 입력 (한 줄에 하나씩) | 쓰인 줄 | 결과 |
+| 실습 | 입력 (한 줄에 하나씩) | 쓰인 줄 | 결과 |
 |------|------|------|------|
 | 정상 미션 | `ready` `airborne` `front_blocked` `front_clear` `arrived` `landed` | 1 → 2 → 3 → 4 → 5 → 6 | `IDLE → TAKEOFF → CRUISE → AVOID → CRUISE → LAND → DONE` |
 | 신호 끊김 → 복구 | `r` 뒤 `ready` `airborne` `sensor_bad` `sensor_ok` | 1 → 2 → 7 → 10 | `CRUISE → HOLD → CRUISE` |
 | 신호 끊김 → 타임아웃 | `r` 뒤 `ready` `airborne` `sensor_bad` `hold_timeout` | 1 → 2 → 7 → 9 | `CRUISE → HOLD → LAND` |
 
-**결함 주입 (fault injection)** — 일부러 문제를 넣고 시스템이 어떻게 반응하는지 보는 시험. 파일은 그대로이고 시뮬레이터 안의 표만 바뀝니다
-- `r` → `del 9 10` (`HOLD` 에서 나가는 줄 두 개를 지움) → 표 점검이 저절로 나옵니다. 창에서는 화살표 9 · 10 이 사라지고 `HOLD` 에 빨간 점선
-- 복구와 같은 입력 `ready` `airborne` `sensor_bad` `sensor_ok` → `HOLD` 에 갇힘. 같은 입력, 다른 결과 — 비행 전에 표에서 결함을 찾습니다
+**결함 주입 (fault injection)** — 일부러 문제를 넣고 시스템이 어떻게 반응하는지 보는 시험. 표 파일은 바뀌지 않고 시뮬레이터 안의 표만 바뀝니다
+- `r` → `del 9 10` (`HOLD` 에서 나가는 줄 두 개 삭제) → 표 점검이 자동으로 실행됩니다. 창에서는 화살표 9 · 10 이 사라지고 `HOLD` 에 빨간 점선
+- 복구와 같은 입력 `ready` `airborne` `sensor_bad` `sensor_ok` → `HOLD` 에서 교착 상태 (deadlock). 같은 입력, 다른 결과 — 비행 전에 표에서 결함을 찾습니다
 ```
 [IDLE] > del 9 10
-  9번 · 10번 줄 지움
+  9번 · 10번 줄 삭제
 표 점검
-  IDLE 에서 갈 수 없는 상태     : 없음
-  DONE 까지 못 가는 상태 (갇힘) : HOLD
-  → 결함 있음 (r 로 되돌리기)
+  IDLE 에서 도달할 수 없는 상태           : 없음
+  DONE 에 도달할 수 없는 상태 (교착 상태) : HOLD
+  → 결함 있음 (r 로 초기화)
 …
 [CRUISE] > sensor_bad
   사건 sensor_bad → 7번 줄 → HOLD
-  (HOLD 에서 나가는 줄이 없습니다 — 갇힘)
+  (HOLD 에서 나가는 줄 없음 — 교착 상태)
 [HOLD] > sensor_ok
-  사건 sensor_ok → 맞는 줄 없음 → HOLD 그대로
-  (HOLD 에서 나가는 줄이 없습니다 — 갇힘)
+  사건 sensor_ok → 해당 줄 없음 → HOLD 유지
+  (HOLD 에서 나가는 줄 없음 — 교착 상태)
 ```
-- `r` 로 처음대로 돌립니다. `r` 은 표와 상태를 함께 돌리므로 줄을 지우고 시험할 때는 `r` 먼저, `del` 은 그 뒤에
-- 지워도 줄 번호는 처음 번호 그대로입니다 (`t` 로 확인 — 맨 아래 `(지운 줄: 9 10 — r 로 되돌리기)`)
-- (심화) 한 줄에 여러 이름을 띄어 쓰면 차례로 넣은 것과 같습니다. 같은 순간에 생긴 사건은 `+` 로 잇습니다 — `CRUISE` 에서 `arrived+front_blocked` → `같은 순간 사건 2개: arrived · front_blocked → 3번 줄 front_blocked (위 줄이 먼저) → AVOID` (같은 순간 두 줄이 맞으면 위 줄 하나만)
+- `r` 로 초기화합니다. `r` 은 표와 상태를 함께 초기화하므로 줄을 삭제하고 시험할 때는 `r` 먼저, `del` 은 그 뒤에
+- 삭제해도 줄 번호는 처음 번호를 유지합니다 (`t` 로 확인 — 맨 아래 `(삭제한 줄: 9 10 — r 로 초기화)`)
+- (심화) 한 줄에 여러 이름을 띄어 쓰면 차례로 입력한 것과 같습니다. 같은 순간에 생긴 사건은 `+` 로 잇습니다 — `CRUISE` 에서 `arrived+front_blocked` → `같은 순간 사건 2개: arrived · front_blocked → 3번 줄 front_blocked (위 줄이 먼저) → AVOID` (같은 순간 두 줄이 해당하면 위 줄 하나만)
 
 ### 2) 22강 — 미션 비행 (터미널 1·2·3·5, 상태도 창 4 는 선택)
 ```bash
@@ -693,14 +693,14 @@ MicroXRCEAgent udp4 -p 8888
 ros2 run drone_ros2_advanced w11_scan_bridge
 # 터미널 4 (선택): 상태도 창 — PX4 에 명령하지 않음(표시 전용). 미션(5번)보다 먼저 켜면 처음부터 보임
 ros2 run drone_ros2_advanced w12_state_viewer
-# 터미널 5: 미션 노드 — 켜면 이륙 → 회피 → 착륙까지
+# 터미널 5: 미션 노드 — 실행하면 이륙 → 회피 → 착륙까지 자동 수행
 ros2 run drone_ros2_advanced w12_mission --ros-args -p fly:=true
 ```
-- PX4 에 명령하는 노드는 5번 `w12_mission` 하나입니다. **2주차 `keyboard_control` 이나 `w11_avoid` 와 함께 켜지 않습니다** (Offboard 명령이 섞임)
-- 노드 안은 0.1초마다 세 단계뿐입니다: **사건 만들기**(PX4 상태 · 스캔 · 시간 → 지금 맞는 사건 모두) → **표 찾기**(표 밖 안전장치 2개를 먼저, 그다음 표를 위 줄부터 — 지금 상태의 줄만) → **상태의 일**(명령 1번). 상태가 바뀔 때마다 `[전이]` 한 줄
-- 실습은 비행 두 번(+ 선택 한 번)이고, **비행마다 PX4(터미널 1)를 다시 시작**합니다 (아래 '다시 비행하려면')
+- PX4 에 명령하는 노드는 5번 `w12_mission` 하나입니다. **2주차 `keyboard_control` 이나 `w11_avoid` 와 함께 실행하지 않습니다** (Offboard 명령이 섞임)
+- 노드는 0.1초 주기로 세 단계를 반복합니다: **사건 판정**(PX4 상태 · 스캔 · 시간 → 조건이 충족된 사건 모두) → **표 조회**(표 밖 안전장치 2개를 먼저, 그다음 표를 위 줄부터 — 현재 상태의 줄만) → **상태별 동작**(명령 1번). 상태 전이 시 `[전이]` 한 줄
+- 실습은 비행 2회(+ 선택 1회)이고, **비행마다 PX4(터미널 1)를 재시작**합니다 (아래 '재비행')
 
-**비행 1 — 정상 미션**: 켜기만 하면 끝까지 갑니다. 로그 (간이 모델(simple model) 계산 예 — PX4 지연을 넣은 시뮬레이션. VM 숫자는 조금 다름)
+**비행 1 — 정상 미션**: 명령 한 줄로 이륙 · 회피 · 착륙까지 자동 수행합니다. 로그 (간이 모델(simple model) 계산 예 — PX4 지연을 넣은 시뮬레이션. VM 숫자는 조금 다름)
 ```
 [전이] IDLE → TAKEOFF | 1번 줄 ready | Offboard + Arm 확인
 [전이] TAKEOFF → CRUISE | 2번 줄 airborne | 상대 고도 1.80 m
@@ -712,23 +712,23 @@ ros2 run drone_ros2_advanced w12_mission --ros-args -p fly:=true
 [미션 기록] 0.0 IDLE | 1.2 TAKEOFF | 3.2 CRUISE | 15.4 AVOID | 21.4 CRUISE | 38.5 LAND | 42.4 DONE
 미션 끝 — Ctrl+C 로 노드를 끄세요
 ```
-- `[전이]` 한 줄 = 표 한 줄: `N번 줄` 이 위 표의 줄 번호입니다. 정상 비행이면 표 1 → 6번 줄이 차례로 나옵니다
-- 11주차와 달리 `commander land` 가 필요 없습니다. `미션 끝 — Ctrl+C 로 노드를 끄세요` 가 찍히면 끝내는 순서대로
-- 사이사이 `[CRUISE]` · `[AVOID]` 상태 줄이 1초마다 찍힙니다. 전이 줄만 보려면 `ros2 run drone_ros2_advanced w12_mission --ros-args -p fly:=true 2>&1 | grep -E "전이|미션"`, 지금 상태만 보려면 `ros2 topic echo /sjcu/mission_state`
+- `[전이]` 한 줄 = 표 한 줄: `N번 줄` 이 위 표의 줄 번호입니다. 정상 비행이면 표 1 → 6번 줄 순서로 나옵니다
+- 11주차와 달리 `commander land` 가 필요 없습니다. `미션 끝 — Ctrl+C 로 노드를 끄세요` 가 출력되면 종료 순서대로
+- 사이사이 `[CRUISE]` · `[AVOID]` 상태 줄이 1초마다 출력됩니다. 전이 줄만 보려면 `ros2 run drone_ros2_advanced w12_mission --ros-args -p fly:=true 2>&1 | grep -E "전이|미션"`, 현재 상태만 보려면 `ros2 topic echo /sjcu/mission_state`
 
 **상태도 창 `w12_state_viewer` (터미널 4, 선택)** — 21강 시뮬레이터와 같은 그림으로 미션을 실시간으로 봅니다. PX4 에 명령하지 않으므로 언제 켜고 꺼도 미션에는 영향이 없습니다
-- 위: 상태도. 지금 상태 = 빨강, 방금 쓰인 줄의 화살표 = 빨강, 화살표 옆 숫자 = 표의 줄 번호
+- 위: 상태도. 현재 상태 = 빨강, 방금 쓰인 줄의 화살표 = 빨강, 화살표 옆 숫자 = 표의 줄 번호
 - 가운데: 최근 전이 3줄 (`38.5 s  #5  arrived  CRUISE -> LAND`)
 - 아래: 최근 60초 상태 띠 + 앞 거리(±30°) 곡선. 1.5 m 정지 판단 · 2.0 m 해제 선 사이에서 `AVOID` 가 시작하고 끝나는 것(히스테리시스)이 보입니다
 - 미션 노드가 전이 때마다 `/sjcu/mission_transition` 에 보내는 한 줄을 받아 그립니다: `ros2 topic echo /sjcu/mission_transition` → `15.4 | CRUISE → AVOID | 3 front_blocked | 앞 1.49 m < 1.5 m`
-- 미션 노드를 다시 켜면 그림이 처음부터 그려집니다. 끝내기: 창에서 `q`
+- 미션 노드를 다시 실행하면 그림이 처음부터 그려집니다. 종료: 창에서 `q`
 - (교수용) `--ros-args -p record:=true` → `~/w12_state_<시각>.csv` 에 0.1초마다 상태 · 앞 거리 · 전이
 
-**비행 2 — 결함 주입(브리지 끄기·켜기) → 모드 전환(`commander land`)** (PX4 를 다시 시작한 새 비행)
+**비행 2 — 결함 주입(브리지 종료 후 재실행) → 사람의 PX4 모드 변경(`commander land`)** (PX4 를 재시작한 새 비행)
 - 결함 주입: 이륙해 `CRUISE` 가 되면 3번 터미널(브리지) Ctrl+C → 0.5초 뒤 `HOLD` (7번 줄 · `AVOID` 중이면 8번 줄) — 제자리에서 수평 정지 · 고도 유지
-- `HOLD` 가 찍히면 바로 3번에서 ↑ + Enter 로 브리지를 다시 실행 (브리지는 뜨는 데 몇 초 걸림) → 스캔이 1.0초 이어지면 `CRUISE` (10번 줄)로 돌아가 미션을 이어 갑니다
-- 모드 전환: 다시 날기 시작하면 1번 터미널에서 `pxh> commander land` → 약 1초 뒤 `DONE` (표 밖 안전장치) — 노드는 Offboard 를 다시 요청하지 않고 명령을 멈춥니다(조종권(control authority)을 넘김). 내려가는 일은 PX4 가 합니다 → 착지 확인 뒤 Ctrl+C
-- 로그 (간이 모델 계산 예 — 브리지를 6.0초에 끄고 9.0초에 다시 켬, 28.0초에 `commander land`):
+- `HOLD` 확인 즉시 3번에서 ↑ + Enter 로 브리지 재실행 (실행에 몇 초 걸림 — HOLD 타임아웃 10초 안에) → 스캔이 1.0초 이어지면 `CRUISE` (10번 줄)로 복귀해 미션을 계속합니다
+- 사람의 PX4 모드 변경: 다시 전진하기 시작하면 1번 터미널에서 `pxh> commander land` → 약 1초 뒤 `DONE` (표 밖 안전장치) — 노드는 Offboard 재요청 없이 명령을 중단합니다(조종권(control authority) 이양). 착륙은 PX4 가 수행합니다 → 착지 확인 뒤 Ctrl+C
+- 로그 (간이 모델 계산 예 — 브리지를 6.0초에 종료하고 9.0초에 재실행, 28.0초에 `commander land`):
 ```
 [전이] CRUISE → HOLD | 7번 줄 sensor_bad | 유효한 스캔 0.5초 없음
 [HOLD] 대기 0.0 / 10초 | 스캔 없음 | 수평 정지 · 고도 유지
@@ -738,30 +738,30 @@ ros2 run drone_ros2_advanced w12_mission --ros-args -p fly:=true
 …
 [전이] CRUISE → DONE | 안전장치 px4_takeover | Offboard 가 아닌 채 1초 (PX4 모드: Land) → 다시 요청하지 않음
 [미션 기록] 0.0 IDLE | 1.2 TAKEOFF | 3.2 CRUISE | 6.6 HOLD | 10.1 CRUISE | 19.4 AVOID | 25.4 CRUISE | 29.2 DONE
-PX4 가 조종 중 (PX4 모드: Land) — 이 노드는 명령을 멈춤. 착지 확인 뒤 Ctrl+C (공중에 멈춰 있으면 pxh> commander land)
+PX4 가 조종 중 (PX4 모드: Land) — 이 노드는 명령 중단 (조종권 이양). 착지 확인 뒤 Ctrl+C (공중에 멈춰 있으면 pxh> commander land)
 ```
 
-**노드 상태와 PX4 비행 모드** — 노드는 상태에 따라 PX4 비행 모드를 바꾸고(**모드 전환, mode switching**), 사람이나 PX4 가 모드를 바꾸면 명령을 멈춥니다
+**노드 상태와 PX4 비행 모드** — 노드는 상태에 따라 PX4 비행 모드를 바꾸고(**모드 전환, mode switching**), 사람이나 PX4 가 모드를 바꾸면 명령을 중단합니다(조종권 이양)
 
 | 노드 상태 | PX4 비행 모드 |
 |------|------|
 | `IDLE` | 노드가 Offboard + Arm 요청 |
 | `TAKEOFF` · `CRUISE` · `AVOID` · `HOLD` | Offboard (`HOLD` 도 Offboard — PX4 Hold 모드 아님) |
-| `LAND` | 노드가 Land 요청 → 내려가는 일은 PX4 가 함 |
-| `DONE` | 노드는 명령을 멈춤 (Offboard 신호도 멈춤) |
+| `LAND` | 노드가 Land 요청 → 착륙은 PX4 가 수행 |
+| `DONE` | 노드가 명령 중단 (Offboard 신호도 중단) |
 
-**표 밖 안전장치 2개** — 22강 노드에만 있고 표보다 먼저 봅니다 (21강 표 · 시뮬레이터 · 상태도 그림에는 없음). 로그에는 줄 번호 대신 `안전장치`, 전이 토픽 · 상태도 창에는 `safety`
+**표 밖 안전장치 2개** — 22강 노드에만 있고 표보다 먼저 확인합니다 (21강 표 · 시뮬레이터 · 상태도 그림에는 없음). 로그에는 줄 번호 대신 `안전장치`, 전이 토픽 · 상태도 창에는 `safety`
 
-| 사건 | 언제 | 다음 상태 |
+| 사건 | 조건 | 다음 상태 |
 |------|------|------|
-| `px4_takeover` | 비행 중(`TAKEOFF` · `CRUISE` · `AVOID` · `HOLD`) PX4 가 Offboard 가 아닌 채 1초 — 사람이 모드를 바꿈(`commander land`) · PX4 비상 동작 | `DONE` — 다시 요청하지 않고 명령을 멈춤 |
+| `px4_takeover` | 비행 중(`TAKEOFF` · `CRUISE` · `AVOID` · `HOLD`) PX4 가 Offboard 가 아닌 채 1초 — 사람이 모드를 바꿈(`commander land`) · PX4 비상 동작 | `DONE` — 재요청 없이 명령 중단 |
 | `dead_end` | `AVOID` 에서 막다른 곳 — 양옆 막힘 · 재탐색 뒤에도 막힘 · 30초 안에 앞이 열리지 않음 | `LAND` |
 
 - 상태도 창은 화살표 없이 최근 전이 줄에만 `safety  px4_takeover  CRUISE -> DONE` (머리줄 오른쪽에 `(safety = checked before the table, no arrow)`), 전이 토픽은 `29.2 | CRUISE → DONE | safety px4_takeover | …`
-- `IDLE`(Arm 전)과 `LAND`(노드가 요청한 Land 모드)에서는 `px4_takeover` 를 보지 않습니다 — `LAND` 중 `commander land` 는 6번 줄 `landed` 로 끝납니다
+- `IDLE`(Arm 전)과 `LAND`(노드가 요청한 Land 모드)에서는 `px4_takeover` 를 확인하지 않습니다 — `LAND` 중 `commander land` 는 6번 줄 `landed` 로 끝납니다
 - 막다른 곳은 11주차 노드가 멈춰서 호버하던 곳입니다(착륙은 사람이). `obstacle_world` 비행에서는 생기지 않습니다 — 예: `[전이] AVOID → LAND | 안전장치 dead_end | 양옆 막힘 — 앞 1.49 · 왼쪽 0.90 · 오른쪽 0.90 m` (간이 모델, 기둥 앞 양옆에 벽을 둔 시험 월드)
 
-**(선택) 비행 3 — 끄고 기다리기 = 타임아웃**: `CRUISE` 에서 3번 Ctrl+C 하고 그대로 두면 `HOLD` 에서 10초 뒤 `LAND` (9번 줄) → 착지 → `DONE` (6번 줄). 11주차 노드는 신호가 돌아오지 않으면 계속 호버했습니다. 로그 (간이 모델 계산 예):
+**(선택) 비행 3 — 브리지 종료 후 대기 = 타임아웃**: `CRUISE` 에서 3번 Ctrl+C 후 재실행하지 않으면 `HOLD` 에서 10초 뒤 `LAND` (9번 줄) → 착지 → `DONE` (6번 줄). 11주차 노드는 신호가 복구되지 않으면 호버만 유지했습니다. 로그 (간이 모델 계산 예):
 ```
 [전이] CRUISE → HOLD | 7번 줄 sensor_bad | 유효한 스캔 0.5초 없음
 …
@@ -769,37 +769,37 @@ PX4 가 조종 중 (PX4 모드: Land) — 이 노드는 명령을 멈춤. 착지
 [전이] LAND → DONE | 6번 줄 landed | 착지 감지
 [미션 기록] 0.0 IDLE | 1.2 TAKEOFF | 3.2 CRUISE | 6.6 HOLD | 16.6 LAND | 20.5 DONE
 ```
-- 기다리는 시간 바꾸기: `ros2 param set /mission_base hold_timeout 3.0` (1~60초)
+- 대기 시간(타임아웃) 변경: `ros2 param set /mission_base hold_timeout 3.0` (1~60초)
 
-**참고: `fly` 를 빼면 드라이 런(dry run)** — `ros2 run drone_ros2_advanced w12_mission` 처럼 `-p fly:=true` 없이 켜면 비행하지 않고(arm·이륙·속도 명령 없음) 전이만 찍습니다. 10·11주차와 같은 안전 기본값입니다. 시작 줄이 `미션 노드 시작 — 드라이 런 (fly:=false)` 이고 상태 줄 앞에 `[드라이 런]` 이 붙습니다. 모의 스캔(`ros2 topic pub`)으로 전이를 일으켜 보는 방법은 [`mission_base.py`](drone_ros2_advanced/drone_ros2_advanced/week12/mission_base.py) 머리 주석에 있습니다(브리지(3번)는 끄고)
+**참고: `fly` 를 빼면 드라이 런(dry run)** — `ros2 run drone_ros2_advanced w12_mission` 처럼 `-p fly:=true` 없이 실행하면 비행하지 않고(arm·이륙·속도 명령 없음) 전이만 출력합니다. 10·11주차와 같은 안전 기본값입니다. 시작 줄이 `미션 노드 시작 — 드라이 런 (fly:=false)` 이고 상태 줄 앞에 `[드라이 런]` 이 붙습니다. 모의 스캔(`ros2 topic pub`)으로 전이를 일으켜 보는 방법은 [`mission_base.py`](drone_ros2_advanced/drone_ros2_advanced/week12/mission_base.py) 머리 주석에 있습니다(브리지(3번)는 종료하고)
 
 **파라미터**: `fly` 기본 false (시작할 때만 읽음) · `cruise_speed` 0~0.5 기본 0.5 (0 이면 `CRUISE` 에서 제자리, `AVOID` 의 좌우 이동은 계속) · `hold_timeout` 1~60 기본 10. 뒤의 둘은 비행 중에 `ros2 param set /mission_base …` 로 바꿉니다(바뀌면 `전진 속도 변경: 0.5 → 0.3` 같은 한 줄, 범위 밖 값은 경고 후 이전 값 유지). 거리·속도 상수는 11주차와 같습니다(정지 판단 1.5 m · 해제 2.0 m · 좌우 이동 0.3 m/s · 안전 거리 1.0 m)
 - 안전 필터 (11주차와 같음, 어느 상태든 명령을 보내기 직전에): 근접(앞 ±45° 1.0 m 미만 → 전진 0) · 옆 안전 거리(가는 쪽 옆 1.0 m 미만 → 좌우 0) · 지오펜스(북 ±3 m 바깥쪽 좌우 0 · 상대 고도 5 m 위로 상승 0) · 사각지대(뒤 90° 는 측정하지 않으므로 후진 없음)
 
-**끝내는 순서**: `미션 끝 — Ctrl+C 로 노드를 끄세요` 가 찍히면 5 → 3 → 2 → 1 순서로 Ctrl+C (4 는 아무 때나). 비행 중에 끝내려면 1번에서 `pxh> commander land` → 약 1초 뒤 안전장치로 `DONE` → 착지 확인 → 5 → 3 → 2 → 1. 비행 중에 노드를 먼저 끄면 1초 뒤 PX4 가 Offboard 신호 끊김 비상 동작으로 넘어갑니다
+**종료 순서**: `미션 끝 — Ctrl+C 로 노드를 끄세요` 가 출력되면 5 → 3 → 2 → 1 순서로 Ctrl+C (4 는 아무 때나). 비행 중 종료는 1번에서 `pxh> commander land` → 약 1초 뒤 안전장치로 `DONE` → 착지 확인 → 5 → 3 → 2 → 1. 비행 중에 노드를 먼저 종료하면 1초 뒤 PX4 가 Offboard 신호 끊김 비상 동작으로 넘어갑니다
 
-**다시 비행하려면 PX4(터미널 1)도 다시 시작합니다** — 끝내는 순서대로 끈 뒤 1 → 2 → 3 → (4) → 5. 노드만 다시 켜면 착륙한 자리에서 이륙하므로, 목표 위였다면 `[전이] CRUISE → LAND | 5번 줄 arrived | 동 +12.0 m (목표 12.0)` 처럼 바로 내립니다
+**재비행 — PX4(터미널 1)도 재시작합니다** — 종료 순서대로 종료한 뒤 1 → 2 → 3 → (4) → 5. 노드만 다시 실행하면 착륙한 위치에서 이륙하므로, 목표 위였다면 `[전이] CRUISE → LAND | 5번 줄 arrived | 동 +12.0 m (목표 12.0)` 처럼 바로 착륙합니다
 
 ### 막혔을 때
 | 증상 | 원인 → 해결 |
 |------|-------------|
-| 시뮬레이터가 `모르는 사건: …` · `숫자는 표의 줄 번호입니다 …` · `한글이 입력됐습니다 …` · `… 는 상태 이름입니다 …` · `모르는 입력: c` 같은 안내만 냄 | 사건은 영어 **이름**을 한 줄에 하나씩 → 한/영 키, 띄어쓰기 대신 밑줄(`front_blocked`), 상태 이름(`TAKEOFF`)이 아니라 사건 이름(`airborne`). 숫자는 `del 9` 처럼 줄을 지울 때만. 옛 명령 `c` · `s` · `swap` 은 없음(점검은 `del` 뒤에 저절로). `h` = 도움말 |
-| 시뮬레이터에서 사건 이름을 쳐도 반응 없음 | 상태도 창이 선택됨 (창에 `type in the TERMINAL window` 가 뜸) → 터미널을 한 번 클릭 |
-| `… → 미션이 끝났습니다 — r 로 처음부터` | `DONE` 뒤에는 사건을 받지 않음 → `r` (표도 처음대로 돌아가므로 줄 지우기는 `r` 뒤에) |
+| 시뮬레이터가 `알 수 없는 사건: …` · `숫자는 표의 줄 번호입니다 …` · `한글이 입력됐습니다 …` · `… 는 상태 이름입니다 …` · `알 수 없는 입력: c` 같은 안내만 출력 | 사건은 영어 **이름**을 한 줄에 하나씩 → 한/영 키, 띄어쓰기 대신 밑줄(`front_blocked`), 상태 이름(`TAKEOFF`)이 아니라 사건 이름(`airborne`). 숫자는 `del 9` 처럼 줄을 삭제할 때만. 옛 명령 `c` · `s` · `swap` 은 없음(점검은 `del` 뒤에 자동 실행). `h` = 도움말 |
+| 시뮬레이터에서 사건 이름을 입력해도 반응 없음 | 상태도 창이 선택됨 (창에 `type in the TERMINAL window` 가 뜸) → 터미널을 한 번 클릭 |
+| `… → 미션이 끝났습니다 — r 로 초기화` | `DONE` 뒤에는 사건을 받지 않음 → `r` (표도 초기화되므로 줄 삭제는 `r` 뒤에) |
 | 상태도 창이 안 뜸 (`상태도 창 없음 … — 터미널만으로 계속`) | 화면 없음(SSH) · OpenCV 없음 → 시뮬레이터는 터미널만으로 됩니다. `w12_state_viewer` 는 OpenCV 가 있어야 함 — 5주차 OpenCV 설치 확인 |
 | `ros2 pkg executables` 에 `w12_keyboard` 도 보임 | 옛 빌드가 남음 → 쓰지 않음(미션 노드가 받지 않음). 지우려면 `rm -rf ~/ros2_ws/build/drone_ros2_advanced ~/ros2_ws/install/drone_ros2_advanced` 후 다시 빌드, `source install/setup.bash` |
 | `[IDLE] 스캔 대기 — w11_scan_bridge(터미널 3) 실행 확인` 이 계속 | 브리지(3번) 미실행 / `pxh>` 보다 먼저 켬 → `ros2 topic hz /lidar/scan` 확인, 브리지 다시 실행 |
 | 시작 줄 뒤로 아무것도 안 나오고 이륙하지 않음 (`Offboard 모드 전환` 도 없음) | PX4 위치가 안 옴 → 터미널 2 Agent 실행 확인, `ros2 topic info /fmu/out/vehicle_local_position` 의 `Publisher count` 가 1 인지 |
 | 이륙하지 않고 "Offboard 모드 전환 / Arm 명령 전송" 반복 | px4_msgs 가 main → 6주차 절의 `release/1.16` 전환 |
-| 시작 줄이 `드라이 런 (fly:=false)` · 로그에 `[드라이 런]` · 전이는 찍히는데 드론이 안 뜸 | `-p fly:=true` 빠짐 → 5번 Ctrl+C 후 `ros2 run drone_ros2_advanced w12_mission --ros-args -p fly:=true` |
-| 상태도 창이 두 상태를 오감 | 미션 노드가 둘 켜짐 → `ros2 node list` 에 `/mission_base` 가 둘이면 5번 하나만 남기고 Ctrl+C |
+| 시작 줄이 `드라이 런 (fly:=false)` · 로그에 `[드라이 런]` · 전이는 출력되는데 드론이 이륙하지 않음 | `-p fly:=true` 빠짐 → 5번 Ctrl+C 후 `ros2 run drone_ros2_advanced w12_mission --ros-args -p fly:=true` |
+| 상태도 창이 두 상태를 오감 | 미션 노드가 둘 실행됨 → `ros2 node list` 에 `/mission_base` 가 둘이면 5번 하나만 남기고 Ctrl+C |
 | `commander land` 를 친 적 없는데 `[전이] … → DONE \| 안전장치 px4_takeover` | PX4 가 Offboard 를 끊음(비상 동작 — 줄 끝 `PX4 모드:` 확인) → `pxh>` 로그 확인. 다른 노드가 PX4 에 명령 중인지 `ros2 node list` |
-| 브리지를 다시 켰는데 `HOLD → LAND` | 10초 안에 스캔이 다시 오지 않음(HOLD 타임아웃 — 정상 동작) → 연습할 때는 `ros2 param set /mission_base hold_timeout 30` 처럼 늘려 두기 |
-| 이륙하자마자 `CRUISE → LAND` | PX4 를 그대로 두고 노드만 다시 켬(이미 목표 위) → PX4 다시 시작 |
+| 브리지를 재실행했는데 `HOLD → LAND` | 10초 안에 스캔이 복구되지 않음(HOLD 타임아웃 — 정상 동작) → 연습할 때는 `ros2 param set /mission_base hold_timeout 30` 처럼 늘려 두기 |
+| 이륙하자마자 `CRUISE → LAND` | PX4 는 재시작하지 않고 노드만 다시 실행함(이미 목표 위) → PX4 재시작 |
 | PX4 를 다시 켰는데 `gazebo already running world:` | 이전 Gazebo 서버가 남음 → `pkill -9 -f "gz sim"` → `pgrep -af "gz sim"` 빈 줄 확인 후 다시 |
-| 도착했는데 목표 판 밖에 내림 | 전진 속도 그대로 착륙 모드로 넘어가 조금 밀림 → `ros2 param set /mission_base cruise_speed 0.3` |
-| 상태도 창이 `STATE -` · waiting 에서 안 바뀜 | `w12_mission` 이 꺼져 있음 → 미션 노드를 켜면 바로 바뀝니다 |
-| 상태도 창 아래가 `front (+-30 deg): no scan` | 브리지(3번) 꺼짐 → 브리지 다시 실행 |
+| 도착했는데 목표 판 밖에 착륙 | 전진 속도를 유지한 채 착륙 모드로 전환되어 조금 밀림 → `ros2 param set /mission_base cruise_speed 0.3` |
+| 상태도 창이 `STATE -` · waiting 에서 안 바뀜 | `w12_mission` 미실행 → 미션 노드를 실행하면 바로 바뀝니다 |
+| 상태도 창 아래가 `front (+-30 deg): no scan` | 브리지(3번) 종료됨 → 브리지 재실행 |
 | `ros2 param set` 이 노드를 못 찾음 / 값이 안 먹음 | 노드 이름 오타 / 범위 밖 값 → `ros2 node list` 에서 `/mission_base`, 노드 로그의 경고 확인 |
 
 ## 4주차 커스텀 World

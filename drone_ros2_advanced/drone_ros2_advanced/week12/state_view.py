@@ -7,8 +7,8 @@
 #
 # Description:
 #   상태도 그림 — 21강 시뮬레이터(w12_fsm_sim)와 22강 상태 뷰어(w12_state_viewer)가 같이 쓴다
-#   화살표는 전이 조건표에서 그린다 → 표에서 줄을 지우면 그 화살표가 사라진다
-#   화살표 옆 숫자 = 표의 줄 번호. 지금 상태 = 빨강, 지나온 상태·화살표 = 진하게, 방금 지난 화살표 = 빨강
+#   화살표는 전이 조건표에서 그린다 → 표에서 줄을 삭제하면 그 화살표가 사라진다
+#   화살표 옆 숫자 = 표의 줄 번호. 현재 상태 = 빨강, 지나온 상태·화살표 = 진하게, 방금 지난 화살표 = 빨강
 #   표 밖 안전장치 전이(safety)는 화살표가 없다 → 최근 전이 줄에만 'safety' 로 보인다
 #   창 안 글자는 영어·숫자만 (OpenCV 는 한글을 못 쓴다 — 8주차 HUD 와 같음. '—' 같은 기호도 '???' 로 그려짐)
 #   ROS 없음 (numpy + OpenCV 만). 학생은 읽지 않아도 되는 파일
@@ -35,7 +35,7 @@ SOFT   = (140, 140, 140)     # 보조 글자
 FAINT  = (205, 205, 205)     # 아직 안 지난 화살표 · 상자 테두리
 PALE   = (236, 236, 236)     # 지나온 상태 상자
 SHADE  = ((222, 222, 222), (200, 200, 200))   # 상태 띠 (번갈아)
-ACCENT = (57, 78, 224)       # #e04e39 지금 상태 · 방금 지난 화살표
+ACCENT = (57, 78, 224)       # #e04e39 현재 상태 · 방금 지난 화살표
 BLUE   = (216, 111, 58)      # #3a6fd8 앞 거리 곡선
 FONT   = cv2.FONT_HERSHEY_SIMPLEX
 
@@ -116,7 +116,7 @@ def _blocked(a, b):
 # ================================================================
 def edges(table=TRANSITIONS, numbers=None):
     """표 → 화살표 목록 [(출발 상태, 도착 상태, 줄 번호)] — 한 줄 = 화살표 하나
-       numbers = 줄 번호 목록 (시뮬레이터에서 줄을 지워도 처음 번호를 그대로 쓰기 위해)"""
+       numbers = 줄 번호 목록 (시뮬레이터에서 줄을 삭제해도 처음 번호를 유지하기 위해)"""
     numbers = list(numbers) if numbers is not None else list(range(1, len(table) + 1))
     out = []
     for no, (froms, _, to) in zip(numbers, table):
@@ -239,11 +239,11 @@ def _fit_path(path, width, scale=0.45):
 
 def sim_frame(table, numbers, state, visited, done_rows, last, recent, path,
               check=None, changed='', hint=False):
-    """21강 시뮬레이터 창. check = check_table 결과 (IDLE 에서 갈 수 없는 상태, DONE 까지 못 가는 상태)
-       — 줄을 지운 뒤에만. changed = 표를 바꾼 내용 ('deleted 9 10')"""
-    img = _canvas(SIM_H)                            # 높이 고정 — 줄이 늘었다 줄었다 해도 창 크기가 그대로
+    """21강 시뮬레이터 창. check = check_table 결과 (IDLE 에서 도달할 수 없는 상태, DONE 에 도달할 수 없는 상태)
+       — 줄을 삭제한 뒤에만. changed = 표를 바꾼 내용 ('deleted 9 10')"""
+    img = _canvas(SIM_H)                            # 높이 고정 — 줄 수가 달라져도 창 크기는 같다
     _header(img, 'w12_fsm_sim', state, 'type in the terminal  |  v = close window')
-    marks = set(check[1]) if check else set()       # DONE 까지 못 가는 상태 (갇힘) = 빨간 점선
+    marks = set(check[1]) if check else set()       # DONE 에 도달할 수 없는 상태 (교착 상태) = 빨간 점선
     diagram(img, HEADER_H, table, numbers, state, visited, done_rows, last, marks)
     y = _recent(img, HEADER_H + DIAGRAM_H, recent)
     cv2.line(img, (10, y), (WIDTH - 10, y), FAINT, 1)
@@ -251,7 +251,7 @@ def sim_frame(table, numbers, state, visited, done_rows, last, recent, path,
     _text(img, _fit_path(path, WIDTH - 72), (58, y + 17), 0.45, INK)
     y += 24
     if changed:                                      # 표를 바꾼 내용 · 점검 결과 (세 줄 자리는 늘 비워 둠)
-        _text(img, f'table changed: {changed}   (r = restore)', (14, y + 13), 0.45, ACCENT)
+        _text(img, f'table changed: {changed}   (r = reset)', (14, y + 13), 0.45, ACCENT)
     if check is not None:
         unreachable, no_finish = check
         if not (unreachable or no_finish):
@@ -259,7 +259,7 @@ def sim_frame(table, numbers, state, visited, done_rows, last, recent, path,
         else:
             _text(img, 'check', (14, y + 31), 0.45, ACCENT)
             for k, (name, states) in enumerate((('unreachable from IDLE: ', unreachable),
-                                                ('stuck (cannot reach DONE): ', no_finish))):
+                                                ('deadlock (cannot reach DONE): ', no_finish))):
                 _text(img, name + (' '.join(states) or 'none'), (70, y + 31 + 18 * k), 0.45,
                       ACCENT if states else SOFT)
     y = _heading(img, y + 58, 'events - type the NAME in the terminal (one per line)')
