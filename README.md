@@ -612,12 +612,12 @@ ros2 topic pub -r 10 /lidar/scan sensor_msgs/msg/LaserScan "{angle_min: -1.0472,
 | 6 | `LAND` | `landed` (착지) | `DONE` |
 | 7 | `CRUISE` | `sensor_bad` (센서 신호 끊김) | `HOLD` |
 | 8 | `AVOID` | `sensor_bad` (센서 신호 끊김) | `HOLD` |
-| 9 | `HOLD` | `hold_timeout` (HOLD 10초) | `LAND` |
+| 9 | `HOLD` | `hold_timeout` (HOLD 20초) | `LAND` |
 | 10 | `HOLD` | `sensor_ok` (신호 1초 이어짐) | `CRUISE` |
 
 - 1~6 = 정상 미션. 7~10 = **페일세이프(failsafe)** — 고장 시 안전 동작: 센서 신호 끊김 → `HOLD` 에서 대기 → 복구 시 `CRUISE` · 시간 제한 경과 시(**타임아웃, timeout**) `LAND`
 - 3번 1.5 m 와 4번 2.0 m 를 다르게 둔 것은 20강 히스테리시스 — 경계에서 `CRUISE` ⇄ `AVOID` 가 번갈아 나오지 않게
-- 22강 노드의 사건 판정 조건: `airborne` 상대 고도 2 m ± 0.2 · `front_blocked` 앞 1.5 m 미만 또는 앞쪽 ±45° 1.0 m 미만(근접) · `arrived` 동쪽 11.7 m 넘음(목표 12 m) · `sensor_bad` 유효한 스캔 0.5초 없음 또는 `-inf` 칸(너무 가까움) · `sensor_ok` 유효한 스캔 1.0초 이어짐 · `hold_timeout` `HOLD` 에서 10초(파라미터로 바꿈)
+- 22강 노드의 사건 판정 조건: `airborne` 상대 고도 2 m ± 0.2 · `front_blocked` 앞 1.5 m 미만 또는 앞쪽 ±45° 1.0 m 미만(근접) · `arrived` 동쪽 11.7 m 넘음(목표 12 m) · `sensor_bad` 유효한 스캔 0.5초 없음 또는 `-inf` 칸(너무 가까움) · `sensor_ok` 유효한 스캔 1.0초 이어짐 · `hold_timeout` `HOLD` 에서 20초(파라미터로 바꿈)
 - 22강 노드에는 표보다 먼저 확인하는 **표 밖 안전장치** 2개가 더 있습니다 (22강 절의 '표 밖 안전장치 2개')
 
 ### 0) 준비 (코드 받기)
@@ -726,14 +726,14 @@ ros2 run drone_ros2_advanced w12_mission --ros-args -p fly:=true
 
 **비행 2 — 결함 주입(브리지 종료 후 재실행) → 사람의 PX4 모드 변경(`commander land`)** (PX4 를 재시작한 새 비행)
 - 결함 주입: 이륙해 `CRUISE` 가 되면 3번 터미널(브리지) Ctrl+C → 0.5초 뒤 `HOLD` (7번 줄 · `AVOID` 중이면 8번 줄) — 제자리에서 수평 정지 · 고도 유지
-- `HOLD` 확인 즉시 3번에서 ↑ + Enter 로 브리지 재실행 (실행에 몇 초 걸림 — HOLD 타임아웃 10초 안에) → 스캔이 1.0초 이어지면 `CRUISE` (10번 줄)로 복귀해 미션을 계속합니다
+- `HOLD` 확인 즉시 3번에서 ↑ + Enter 로 브리지 재실행 (다시 뜨는 데 시간이 걸림 — HOLD 타임아웃 20초 안에) → 스캔이 1.0초 이어지면 `CRUISE` (10번 줄)로 복귀해 미션을 계속합니다
 - 사람의 PX4 모드 변경: 다시 전진하기 시작하면 1번 터미널에서 `pxh> commander land` → 약 1초 뒤 `DONE` (표 밖 안전장치) — 노드는 Offboard 재요청 없이 명령을 중단합니다(조종권(control authority) 이양). 착륙은 PX4 가 수행합니다 → 착지 확인 뒤 Ctrl+C
 - 로그 (간이 모델 계산 예 — 브리지를 6.0초에 종료하고 9.0초에 재실행, 28.0초에 `commander land`):
 ```
 [전이] CRUISE → HOLD | 7번 줄 sensor_bad | 유효한 스캔 0.5초 없음
-[HOLD] 대기 0.0 / 10초 | 스캔 없음 | 수평 정지 · 고도 유지
+[HOLD] 대기 0.0 / 20초 | 스캔 없음 | 수평 정지 · 고도 유지
 …
-[HOLD] 대기 3.0 / 10초 | 스캔 복구 0.5 / 1.0초 | 수평 정지 · 고도 유지
+[HOLD] 대기 3.0 / 20초 | 스캔 복구 0.5 / 1.0초 | 수평 정지 · 고도 유지
 [전이] HOLD → CRUISE | 10번 줄 sensor_ok | 유효한 스캔 1.0초 이어짐
 …
 [전이] CRUISE → DONE | 안전장치 px4_takeover | Offboard 가 아닌 채 1초 (PX4 모드: Land) → 다시 요청하지 않음
@@ -761,19 +761,19 @@ PX4 가 조종 중 (PX4 모드: Land) — 이 노드는 명령 중단 (조종권
 - `IDLE`(Arm 전)과 `LAND`(노드가 요청한 Land 모드)에서는 `px4_takeover` 를 확인하지 않습니다 — `LAND` 중 `commander land` 는 6번 줄 `landed` 로 끝납니다
 - 막다른 곳은 11주차 노드가 멈춰서 호버하던 곳입니다(착륙은 사람이). `obstacle_world` 비행에서는 생기지 않습니다 — 예: `[전이] AVOID → LAND | 안전장치 dead_end | 양옆 막힘 — 앞 1.49 · 왼쪽 0.90 · 오른쪽 0.90 m` (간이 모델, 기둥 앞 양옆에 벽을 둔 시험 월드)
 
-**(선택) 비행 3 — 브리지 종료 후 대기 = 타임아웃**: `CRUISE` 에서 3번 Ctrl+C 후 재실행하지 않으면 `HOLD` 에서 10초 뒤 `LAND` (9번 줄) → 착지 → `DONE` (6번 줄). 11주차 노드는 신호가 복구되지 않으면 호버만 유지했습니다. 로그 (간이 모델 계산 예):
+**(선택) 비행 3 — 브리지 종료 후 대기 = 타임아웃**: `CRUISE` 에서 3번 Ctrl+C 후 재실행하지 않으면 `HOLD` 에서 20초 뒤 `LAND` (9번 줄) → 착지 → `DONE` (6번 줄). 11주차 노드는 신호가 복구되지 않으면 호버만 유지했습니다. 로그 (간이 모델 계산 예):
 ```
 [전이] CRUISE → HOLD | 7번 줄 sensor_bad | 유효한 스캔 0.5초 없음
 …
-[전이] HOLD → LAND | 9번 줄 hold_timeout | 10초 안에 복구되지 않음
+[전이] HOLD → LAND | 9번 줄 hold_timeout | 20초 안에 복구되지 않음
 [전이] LAND → DONE | 6번 줄 landed | 착지 감지
-[미션 기록] 0.0 IDLE | 1.2 TAKEOFF | 3.2 CRUISE | 6.6 HOLD | 16.6 LAND | 20.5 DONE
+[미션 기록] 0.0 IDLE | 1.2 TAKEOFF | 3.2 CRUISE | 6.6 HOLD | 26.6 LAND | 30.5 DONE
 ```
 - 대기 시간(타임아웃) 변경: `ros2 param set /mission_base hold_timeout 3.0` (1~60초)
 
 **참고: `fly` 를 빼면 드라이 런(dry run)** — `ros2 run drone_ros2_advanced w12_mission` 처럼 `-p fly:=true` 없이 실행하면 비행하지 않고(arm·이륙·속도 명령 없음) 전이만 출력합니다. 10·11주차와 같은 안전 기본값입니다. 시작 줄이 `미션 노드 시작 — 드라이 런 (fly:=false)` 이고 상태 줄 앞에 `[드라이 런]` 이 붙습니다. 모의 스캔(`ros2 topic pub`)으로 전이를 일으켜 보는 방법은 [`mission_base.py`](drone_ros2_advanced/drone_ros2_advanced/week12/mission_base.py) 머리 주석에 있습니다(브리지(3번)는 종료하고)
 
-**파라미터**: `fly` 기본 false (시작할 때만 읽음) · `cruise_speed` 0~0.5 기본 0.5 (0 이면 `CRUISE` 에서 제자리, `AVOID` 의 좌우 이동은 계속) · `hold_timeout` 1~60 기본 10. 뒤의 둘은 비행 중에 `ros2 param set /mission_base …` 로 바꿉니다(바뀌면 `전진 속도 변경: 0.5 → 0.3` 같은 한 줄, 범위 밖 값은 경고 후 이전 값 유지). 거리·속도 상수는 11주차와 같습니다(정지 판단 1.5 m · 해제 2.0 m · 좌우 이동 0.3 m/s · 안전 거리 1.0 m)
+**파라미터**: `fly` 기본 false (시작할 때만 읽음) · `cruise_speed` 0~0.5 기본 0.5 (0 이면 `CRUISE` 에서 제자리, `AVOID` 의 좌우 이동은 계속) · `hold_timeout` 1~60 기본 20 (VM 에서 10초로는 브리지를 다시 실행해도 LAND 로 넘어가 20초로 올림). 뒤의 둘은 비행 중에 `ros2 param set /mission_base …` 로 바꿉니다(바뀌면 `전진 속도 변경: 0.5 → 0.3` 같은 한 줄, 범위 밖 값은 경고 후 이전 값 유지). 거리·속도 상수는 11주차와 같습니다(정지 판단 1.5 m · 해제 2.0 m · 좌우 이동 0.3 m/s · 안전 거리 1.0 m)
 - 안전 필터 (11주차와 같음, 어느 상태든 명령을 보내기 직전에): 근접(앞 ±45° 1.0 m 미만 → 전진 0) · 옆 안전 거리(가는 쪽 옆 1.0 m 미만 → 좌우 0) · 지오펜스(북 ±3 m 바깥쪽 좌우 0 · 상대 고도 5 m 위로 상승 0) · 사각지대(뒤 90° 는 측정하지 않으므로 후진 없음)
 
 **종료 순서**: `미션 끝 — Ctrl+C 로 노드를 끄세요` 가 출력되면 5 → 3 → 2 → 1 순서로 Ctrl+C (4 는 아무 때나). 비행 중 종료는 1번에서 `pxh> commander land` → 약 1초 뒤 안전장치로 `DONE` → 착지 확인 → 5 → 3 → 2 → 1. 비행 중에 노드를 먼저 종료하면 1초 뒤 PX4 가 Offboard 신호 끊김 비상 동작으로 넘어갑니다
@@ -794,7 +794,7 @@ PX4 가 조종 중 (PX4 모드: Land) — 이 노드는 명령 중단 (조종권
 | 시작 줄이 `드라이 런 (fly:=false)` · 로그에 `[드라이 런]` · 전이는 출력되는데 드론이 이륙하지 않음 | `-p fly:=true` 빠짐 → 5번 Ctrl+C 후 `ros2 run drone_ros2_advanced w12_mission --ros-args -p fly:=true` |
 | 상태도 창이 두 상태를 오감 | 미션 노드가 둘 실행됨 → `ros2 node list` 에 `/mission_base` 가 둘이면 5번 하나만 남기고 Ctrl+C |
 | `commander land` 를 친 적 없는데 `[전이] … → DONE \| 안전장치 px4_takeover` | PX4 가 Offboard 를 끊음(비상 동작 — 줄 끝 `PX4 모드:` 확인) → `pxh>` 로그 확인. 다른 노드가 PX4 에 명령 중인지 `ros2 node list` |
-| 브리지를 재실행했는데 `HOLD → LAND` | 10초 안에 스캔이 복구되지 않음(HOLD 타임아웃 — 정상 동작) → 연습할 때는 `ros2 param set /mission_base hold_timeout 30` 처럼 늘려 두기 |
+| 브리지를 재실행했는데 `HOLD → LAND` | 20초 안에 스캔이 복구되지 않음(HOLD 타임아웃 — 정상 동작) → 느린 PC 에서는 `ros2 param set /mission_base hold_timeout 30` 처럼 늘려 두기 |
 | 이륙하자마자 `CRUISE → LAND` | PX4 는 재시작하지 않고 노드만 다시 실행함(이미 목표 위) → PX4 재시작 |
 | PX4 를 다시 켰는데 `gazebo already running world:` | 이전 Gazebo 서버가 남음 → `pkill -9 -f "gz sim"` → `pgrep -af "gz sim"` 빈 줄 확인 후 다시 |
 | 도착했는데 목표 판 밖에 착륙 | 전진 속도를 유지한 채 착륙 모드로 전환되어 조금 밀림 → `ros2 param set /mission_base cruise_speed 0.3` |
