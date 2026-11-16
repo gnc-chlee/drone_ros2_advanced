@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version='1.9'>
+  <model name='x500_lidar_2d_cam_down'>
+    <self_collide>false</self_collide>
+
+    <!-- 1) 기체: PX4 기본 x500 -->
+    <include merge='true'>
+      <uri>model://x500</uri>
+    </include>
+
+    <!-- 2) 2D LiDAR: PX4 lidar_2d_v2/model.sdf 4~76행을 옮겨 적음. 자리는 x500_lidar_2d 와 같음 (.12 0 .26)
+            이름(link / lidar_2d_v2)을 그대로 두어 토픽의 링크 · 센서 부분이 기본 기체와 같다 (기체 이름만 x500_lidar_2d_cam_down_0).
+            원본과 달라질 수 있는 값은 update_rate 한 줄 (83번째 줄 · PX4 원본은 30 — 10 으로 낮출지는 VM 측정 뒤 확정) -->
+    <link name="link">
+      <pose>.12 0 .26 0 0 0</pose>
+      <inertial>
+        <pose>0 0 0.0435 0 0 0</pose>
+        <mass>0.37</mass>
+        <inertia>
+          <ixx>0.00034437749999999994</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.00034437749999999994</iyy>
+          <iyz>0</iyz>
+          <izz>0.00022199999999999998</izz>
+        </inertia>
+      </inertial>
+      <collision name="collision_base">
+        <pose>0 0 0.0205 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.06 0.06 0.041</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="collision_mid">
+        <pose>0 0 0.055 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.025</radius>
+            <length>0.028</length>
+          </cylinder>
+        </geometry>
+      </collision>
+      <collision name="collision_top">
+        <pose>0 0 0.078 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.056 0.056 0.018</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <mesh>
+            <uri>model://lidar_2d_v2/meshes/lidar_2d_v2.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <sensor name="lidar_2d_v2" type="gpu_lidar">
+        <pose>0 0 0.055 0 0 0</pose>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>1080</samples>
+              <resolution>1</resolution>
+              <min_angle>-2.356195</min_angle>
+              <max_angle>2.356195</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.1</min>
+            <max>30</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.001</stddev>
+          </noise>
+        </ray>
+        <always_on>0</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+      </sensor>
+    </link>
+    <joint name="LidarJoint" type="fixed">
+      <parent>base_link</parent>
+      <child>link</child>
+    </joint>
+
+    <!-- 3) 아래 카메라: PX4 mono_cam/model.sdf 의 관성(8~19행)과 센서(50~66행)를 옮겨 적음 (겉모양 visual 20~49행은 뺌 → 화면에 카메라 상자가 안 보인다). 자리는 x500_mono_cam_down 과 같음 (0 0 .10, 아래 방향)
+            이름(camera_link / imager)을 그대로 두어 토픽의 링크 · 센서 부분이 기본 기체와 같다.
+            바꾼 값은 해상도 · 주기 (1280x960 · 30 → 640x480 · 15, 8주차 표준과 같음). gravity · velocity_decay(67~68행)는 기본값이라 적지 않음 -->
+    <link name="camera_link">
+      <pose>0 0 .10 0 1.5707 0</pose>
+      <inertial>
+        <pose>0.03 0.03 0.03 0 0 0</pose>
+        <mass>0.050</mass>
+        <inertia>
+          <ixx>0.00004</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.00004</iyy>
+          <iyz>0</iyz>
+          <izz>0.00004</izz>
+        </inertia>
+      </inertial>
+      <sensor name="imager" type="camera">
+        <pose>0 0 0 0 0 0</pose>
+        <camera>
+          <horizontal_fov>1.74</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>3000</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <update_rate>15</update_rate>
+        <visualize>true</visualize>
+      </sensor>
+    </link>
+    <joint name="CameraJoint" type="fixed">
+      <parent>base_link</parent>
+      <child>camera_link</child>
+    </joint>
+  </model>
+</sdf>

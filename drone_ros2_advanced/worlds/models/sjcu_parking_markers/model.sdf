@@ -1,0 +1,37 @@
+<?xml version="1.0" ?>
+<!--
+  sjcu_parking_markers - 주차칸 ArUco 마커 (DICT_4X4_50, ID 0~4)
+
+  - 그림 5장: materials/textures/marker_0.png ~ marker_4.png (520×520 px, 흰 여백 60 px)
+  - parking_world.sdf 는 이 파일을 쓰지 않고 그림만 읽는다 (칸마다 다른 그림을 월드에 직접 적음)
+  - 이 파일은 0번 마커 판 하나를 include 로 놓아 볼 때 쓴다 (4주차 방식):
+      <include><uri>model://sjcu_parking_markers</uri><name>marker_x</name><pose>5 3 0.002 0 0 0</pose></include>
+  - 판 0.6 × 0.6 m, 검은 테두리 바깥 한 변 = 0.6 × 400/520 = 약 0.46 m
+-->
+<sdf version="1.9">
+  <model name="sjcu_parking_markers">
+    <static>true</static>
+    <link name="link">
+      <visual name="visual">
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.6 0.6</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular>
+          <pbr>
+            <metal>
+              <albedo_map>model://sjcu_parking_markers/materials/textures/marker_0.png</albedo_map>
+              <roughness>1.0</roughness>
+              <metalness>0.0</metalness>
+            </metal>
+          </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>
