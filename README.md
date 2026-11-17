@@ -120,7 +120,7 @@ ros2 run drone_ros2_advanced w03_mission_raw --ros-args -p waypoint_file:=$(ros2
 | 10주차 | 거리 센서 개념과 ROS2 토픽 연동 / LiDAR 고도 데이터 활용 실습 | `w10_lidar_bridge` + `w10_range_viewer`, `worlds/lidar_world.sdf` (17강: 하방 LiDAR 거리를 두 경로 — 브리지 원시값 `/lidar/down` · PX4 추정값 `dist_bottom` — 로 읽고 대지 고도 확인) / `w10_terrain_follow` (18강: 드라이 런 → 제자리 고도 유지 → 비행 중에 전진 속도 켜기로 상자 넘기 = 지형 추종, terrain following) |
 | 11주차 | 장애물 감지 원리와 회피 전략 / 회피 비행 노드 실습 | `w11_scan_bridge` + `w11_scan_viewer`, `worlds/obstacle_world.sdf` (19강: 2D LiDAR 스캔 1080칸 → 앞·왼쪽·오른쪽 섹터 최근접 거리, 정지 거리) / `w11_avoid` (20강: 드라이 런 → 제자리 호버 → 비행 중에 전진 켜기로 기둥 앞 정지 → 넓은 쪽 좌우 이동 → 코스 복귀 → 도착 = 반응형 회피, reactive avoidance) |
 | 12주차 | 상태머신 기반 미션 설계 / 모드 전환 로직 | `w12_fsm_sim` (21강: 전이 조건표 시험 · 결함 주입) / `w12_mission` + `w12_state_viewer` (+ 11주차 `w11_scan_bridge`·`obstacle_world`) (22강: 켜면 이륙부터 착륙까지 → 브리지 끄기 → PX4 모드 변경) |
-| 13주차 | 통합 시나리오 설계 / 통합 미션 구현·디버깅 | `w13_fsm_sim` (23강: 통합 미션 전이 조건표 14줄 시험 · 결함 주입 `del 11`) / 24강 실행 파일(`w13_bridge` · `w13_mission` · `w13_state_viewer`)은 VM 확인 뒤 추가 |
+| 13주차 | 통합 시나리오 설계 / 통합 미션 구현·디버깅 | `w13_fsm_sim` (23강: 통합 미션 전이 조건표 14줄 시험 · 결함 주입 `del 11`) / `w13_bridge` + `w13_mission` + `w13_state_viewer` (+ 5주차 `w05_aruco`, `worlds/parking_world.sdf` · 합성 기체 `x500_lidar_2d_cam_down`) (24강: 땅에서 연결 확인 → 통합 미션 비행(회피 → 마커 정렬 → 하강 → 착륙) → 칸 번호 ↔ 마커 번호 불일치 결함 주입 → 결함 격리) |
 | 14주차 | 통합 미션 시연 / 심화 주제 소개 (RL, YOLO) | `w14_yolo`, `w14_haar_vs_yolo` |
 | 15주차 | **기말고사** | - |
 
@@ -803,7 +803,7 @@ PX4 가 조종 중 (PX4 모드: Land) — 이 노드는 명령 중단 (조종권
 | `ros2 param set` 이 노드를 못 찾음 / 값이 안 먹음 | 노드 이름 오타 / 범위 밖 값 → `ros2 node list` 에서 `/mission_base`, 노드 로그의 경고 확인 |
 
 ## 13주차 통합 시나리오 설계 · 통합 미션 (23·24강)
-12주차 미션(이륙 → 순항 → 기둥 회피 → 착륙)에 **정밀착륙**(마커 정렬 → 하강)을 더한 통합 미션 「주차장 지정 칸 착륙」입니다 — 같은 코스를 날아온 드론이 목표 칸의 마커 위에 착륙합니다. 23강은 PX4 없이 시뮬레이터로 **전이 조건표 14줄**을 시험합니다(터미널 하나).
+12주차 미션(이륙 → 순항 → 기둥 회피 → 착륙)에 **정밀착륙**(마커 정렬 → 하강)을 더한 통합 미션 「주차장 지정 칸 착륙」입니다 — 같은 코스를 날아온 드론이 목표 칸의 마커 위에 착륙합니다. 23강은 PX4 없이 시뮬레이터로 **전이 조건표 14줄**을 시험합니다(터미널 하나). 24강은 2D LiDAR + 아래 카메라를 함께 단 기체로 같은 표의 미션을 비행합니다(터미널 5개).
 
 **볼 곳**: 코드는 읽지 않아도 됩니다. 아래 **전이 조건표 14줄**만 봅니다. 표는 [`week13/mission_table.py`](drone_ros2_advanced/drone_ros2_advanced/week13/mission_table.py) 한 파일에 있고 시뮬레이터와 24강 미션 노드가 같이 씁니다.
 
@@ -839,9 +839,9 @@ PX4 가 조종 중 (PX4 모드: Land) — 이 노드는 명령 중단 (조종권
 cd ~/ros2_ws/src/drone_ros2_advanced && git fetch origin && git reset --hard origin/main
 cd ~/ros2_ws && rm -rf build/drone_ros2_advanced install/drone_ros2_advanced     # 옛 실행 파일 지우기
 cd ~/ros2_ws && colcon build --packages-select drone_ros2_advanced && source install/setup.bash
-ros2 pkg executables drone_ros2_advanced | grep w13     # 23강: w13_fsm_sim 1개 (24강 실행 파일 3개는 VM 확인 뒤 추가)
+ros2 pkg executables drone_ros2_advanced | grep w13     # 4개: w13_bridge · w13_fsm_sim · w13_mission · w13_state_viewer
 ```
-- 둘째 줄 = 옛 13주차 실행 파일(`w13_stable_raw` · `w13_stable_base`) 지우기 — 빌드는 없어진 실행 이름의 파일을 지우지 않습니다. 둘째 줄 없이 빌드하면 두 이름이 함께 보입니다(옛 얼굴 추종 코드 — `extras/` 로 옮김, 쓰지 않음)
+- 둘째 줄 = 옛 13주차 실행 파일(`w13_stable_raw` · `w13_stable_base`) 지우기 — 빌드는 없어진 실행 이름의 파일을 지우지 않습니다. 둘째 줄 없이 빌드하면 넷째 줄 결과에 옛 실행 파일 두 줄이 더 보입니다(옛 얼굴 추종 코드 — `extras/` 로 옮김, 쓰지 않음)
 - 첫 줄은 [매주 실습 전에](#매주-실습-전에--최신-코드-받기) 와 같습니다 — `git reset` 은 내가 고친 제공 파일을 원래대로 돌립니다(새로 만든 파일은 남음). 고친 파일은 먼저 다른 곳에 복사
 
 ### 1) 23강 — 통합 미션 표 시험 (터미널 하나, PX4·Gazebo 없음)
@@ -894,7 +894,137 @@ ros2 run drone_ros2_advanced w13_fsm_sim
 - `r` 로 초기화합니다. `r` 은 표와 상태를 함께 초기화하므로 줄을 삭제하고 시험할 때는 `r` 먼저, `del` 은 그 뒤에. 삭제해도 줄 번호는 처음 번호를 유지합니다(`t` 로 확인)
 - 안내만 출력될 때(알 수 없는 사건 · 한글 · 상태 이름 등)는 12주차 '막혔을 때' 표와 같습니다. `align` 은 상태 이름(`ALIGN`)이고 사건은 `aligned` · `align_timeout` — 앞부분 `al` 은 둘이 겹쳐 몇 글자 더 입력
 
-**24강** — 실행 파일(`w13_bridge` · `w13_mission` · `w13_state_viewer`)은 VM 확인 뒤 추가합니다.
+### 2) 24강 — 통합 미션 비행 (터미널 5개)
+**단계적 통합 (incremental integration)** 순서로 진행합니다 — 한 단계씩 연결하고 확인: 1단계 땅에서 연결 확인 → 2단계 통합 미션 비행. 기체는 2D LiDAR(기둥 회피) + 아래 카메라(마커 정렬)를 함께 단 합성 기체 `x500_lidar_2d_cam_down`, 월드는 `parking_world`(11주차 코스 + 주차칸 5개 · 칸마다 ArUco 마커 — 좌표는 [`worlds/README.md`](drone_ros2_advanced/worlds/README.md) 13주차 절)입니다. 볼 곳은 미션 노드(터미널 5)의 `[전이]` 로그(한 줄 = 위 표 한 줄)와 확인 명령의 출력입니다.
+```bash
+# 한 번만: 월드 1개 + 모델 폴더(합성 기체 · 마커 그림)를 PX4 로 복사
+cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+cp parking_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+cp -r models/* ~/PX4-Autopilot/Tools/simulation/gz/models/
+
+# 터미널 1 — PX4 + Gazebo
+pkill -9 -f "gz sim"
+cd ~/PX4-Autopilot && PX4_SYS_AUTOSTART=4001 PX4_SIM_MODEL=gz_x500_lidar_2d_cam_down PX4_GZ_WORLD=parking_world ./build/px4_sitl_default/bin/px4
+# 터미널 2
+MicroXRCEAgent udp4 -p 8888
+# 터미널 3 — pxh> 가 뜬 뒤
+ros2 run drone_ros2_advanced w13_bridge
+# 터미널 4 — 0번 칸이면 파라미터 없음
+ros2 run drone_ros2_advanced w05_aruco
+# 터미널 5
+ros2 run drone_ros2_advanced w13_mission --ros-args -p fly:=true
+```
+- 복사(`cp` 두 줄)는 한 번만 — 8주차에 `models/*` 를 복사한 VM 도 다시 (합성 기체 · 마커 그림이 새로 들어감). 확인: `ls ~/PX4-Autopilot/Tools/simulation/gz/models | grep -E "x500_lidar_2d_cam_down|sjcu_parking_markers"` 두 줄
+- 터미널 1 은 `make` 가 아니라 PX4 를 직접 실행합니다 — `make px4_sitl gz_…` 는 PX4 에 airframe 이 있는 기체만 되고, 이 합성 기체는 모델 폴더 복사만으로 뜹니다(재빌드 없음). 첫 줄 `pkill` = 남아 있는 Gazebo 서버 정리
+- 잘 떴는지: Gazebo 화면의 기체 → `pxh>`. 시작 로그에 `[Err] [UserCommands.cc…` 줄이 있으면 기체 스폰 거절 → 모델 폴더 복사 확인 (`GstCameraSystem` 의 `[Err]` 는 무관)
+- 화면 없이(느린 VM) 켤 때는 `HEADLESS=1` 을 `&&` 바로 뒤에 — 줄 맨 앞(`cd` 앞)에 쓰면 `cd` 에만 걸려 효과 없음:
+  `cd ~/PX4-Autopilot && HEADLESS=1 PX4_SYS_AUTOSTART=4001 PX4_SIM_MODEL=gz_x500_lidar_2d_cam_down PX4_GZ_WORLD=parking_world ./build/px4_sitl_default/bin/px4`
+- 터미널 3 `w13_bridge` = 브리지 하나가 스캔 · 영상 · 카메라 정보를 함께 잇습니다 (11주차 스캔 브리지 + 5주차 카메라 브리지). 시작 줄 확인: `[w13_bridge] parking_world · x500_lidar_2d_cam_down_0 연결 — 스캔 · 영상 · 카메라 정보 | 다음: 터미널 4 w05_aruco → 터미널 5 w13_mission` — 센서를 못 찾으면 `[경고]` 안내 뒤 시작 줄이 `… 연결 시도 — 위 [경고] 먼저 확인 (찾지 못함: …)` → 그 안내대로 터미널 1 부터
+- PX4 에 명령하는 노드는 5번 `w13_mission` 하나입니다. **`w06_land` · `w12_mission` · `keyboard_control` 과 함께 실행하지 않습니다** (Offboard 명령이 섞임)
+- 다른 칸(0~4)은 터미널 4 · 5 에 **같은 번호** (목표 칸 번호 = 마커 ID): `… w05_aruco --ros-args -p target_marker_id:=2` · `… w13_mission --ros-args -p fly:=true -p target_slot:=2`. 24강 비행은 0번 칸
+
+**1단계 — 땅에서 연결 확인** (터미널 1~4 를 켠 뒤 · 미션 실행 전, 5번 터미널에서). 확인 순서 = 노드 실행 여부 → 발행자 수 → 수신 주기 → 값 일치
+```bash
+ros2 node list                                       # ① 노드 실행 여부
+ros2 topic info /sjcu/error                          # ② 발행자 수
+ros2 topic hz /lidar/scan                            # ③ 수신 주기 (몇 줄 본 뒤 Ctrl+C)
+ros2 topic hz /camera/image_raw                      # ③ 수신 주기 (몇 줄 본 뒤 Ctrl+C)
+ros2 param get /aruco_detector target_marker_id      # ④ 값 일치
+```
+
+| 확인 순서 | 미션 실행 전 (VM 확인 전 — 예상 출력) | 비행 2 뒤 (VM 확인 전 — 예상 출력) → 판단 |
+|------|------|------|
+| ① 노드 실행 여부 | `/aruco_detector` · `/ros_gz_bridge` | 같음 → 실행 중 |
+| ② 발행자 수 | `Publisher count: 1` | 같음 → 발행 노드 있음 |
+| ③ 수신 주기 | `average rate: …` 반복 출력 | 영상 수신 → 카메라 · 브리지 정상, 원인은 뒤쪽 (마커 인식) |
+| ④ 값 일치 | `Integer value is: 0` = 목표 칸 번호 | `Integer value is: 3` ≠ 목표 칸 0 → **원인** |
+
+- 땅에서는 `/sjcu/error` 가 오지 않는 것이 정상입니다 — 마커 인식은 목표 번호 마커를 찾은 프레임에서만 보냄(땅에서는 화면에 마커가 없음) → ② 발행자 수로 연결을 확인
+- 주기 숫자는 PC 마다 다릅니다 — 0 이 아니고 꾸준하면 정상 (교수 VM `/lidar/scan` 약 7.5 Hz). 영상 토픽이 무거우면 `/camera/camera_info` 로
+- 미션 노드도 이륙 전에 같은 연결(스캔 · 카메라 정보 · 마커 인식의 발행자)을 확인하고, 빠진 것은 터미널 번호로 안내합니다: `[IDLE] 연결 확인 — 마커 인식 없음 → 터미널 4 (w05_aruco) 실행 확인` → 셋이 모두 되고 PX4 위치도 오면 `[IDLE] 연결 확인 완료 — 스캔 · 카메라 정보 · 마커 인식` → Offboard + Arm (위치가 안 오면 `[IDLE] 연결 확인 — PX4 위치 없음 → 터미널 2 (Agent) · 1 (PX4) 실행 확인`)
+
+**2단계 — 비행 1: 정상 미션** — 통합 시험 (integration test) = 연결한 전체가 시나리오대로 동작하는지 확인. 터미널 5 명령 한 줄로 이륙 → 기둥 회피 → 0번 칸 도착 → 마커 정렬 → 하강 → 착륙까지 자동 수행합니다. 로그 (**VM 확인 전 — 이 PC 시험 출력**: 간이 모델(simple model) — PX4 지연 · 1080빔 광선 · 아래 카메라를 계산으로 흉내, 시각은 실시간 비율 1 기준)
+```
+[IDLE] 연결 확인 완료 — 스캔 · 카메라 정보 · 마커 인식
+Offboard 모드 전환
+Arm 명령 전송
+[전이] IDLE → TAKEOFF | 1번 줄 ready | Offboard + Arm 확인
+[전이] TAKEOFF → CRUISE | 2번 줄 airborne | 상대 고도 1.80 m
+[전이] CRUISE → AVOID | 3번 줄 front_blocked | 앞 1.49 m < 1.5 m
+[AVOID] 왼쪽 선택 (왼쪽 23.77 m · 오른쪽 3.00 m)
+[전이] AVOID → CRUISE | 4번 줄 front_clear | 앞 2.01 m ≥ 해제 2.0 m
+[전이] CRUISE → ALIGN | 5번 줄 arrived | 동 +11.7 m (목표 12.0)
+[ALIGN] 정렬 0.0 / 30초 | 오차 0.06 ≥ 0.05 | vx +0.09 · vy +0.01 m/s
+[ALIGN] 정렬 0.1 / 30초 | 오차 0.04 < 0.05 | vx +0.07 · vy +0.01 m/s
+[전이] ALIGN → DESCEND | 11번 줄 aligned | 정렬 오차 0.02 < 0.05
+[DESCEND] 상대 고도 2.00 m | 정렬 오차 0.02 | 하강 0.22 m/s
+…
+[DESCEND] 상대 고도 1.20 m | 정렬 오차 0.00 | 하강 0.28 m/s
+[전이] DESCEND → LAND | 13번 줄 descended | 상대 고도 0.98 m ≤ 1.0 m
+착륙 명령 전송
+[전이] LAND → DONE | 6번 줄 landed | 착지 감지
+[미션 기록] 0.0 IDLE | 1.2 TAKEOFF | 3.2 CRUISE | 15.4 AVOID | 21.4 CRUISE | 38.5 ALIGN | 39.6 DESCEND | 44.4 LAND | 46.9 DONE
+미션 끝 — Ctrl+C 로 노드를 끄세요
+```
+- 정상이면 표의 줄이 1 → 2 → 3 → 4 → 5 → 11 → 13 → 6 순서로 나옵니다 (23강 시뮬레이터의 '정상' 입력과 같은 줄)
+- `[ALIGN] 정렬 … | 오차 0.04 < 0.05` = 마커 오차(고도 보정)가 화면 반폭의 5 % 미만 → 1.0초 유지되면 11번 줄 (앞 숫자 `0.1 / 30초` = `ALIGN` 에 머문 시간 / 타임아웃 — 12주차 `[HOLD] 대기 … / 20초` 와 같은 꼴). `[DESCEND]` = 정렬을 유지하며 하강(최대 0.3 m/s, 오차가 크면 느리게 · 10 % 이상이면 멈춤) → 상대 고도 1.0 m 에서 13번 줄 → PX4 가 착륙
+- 사이사이 `[CRUISE]` · `[AVOID]` 상태 줄도 1초마다 출력됩니다. 전이 줄과 이륙 전 연결 확인 줄만 보려면 `ros2 run drone_ros2_advanced w13_mission --ros-args -p fly:=true 2>&1 | grep -E "전이|미션|연결"`
+- VM 은 실시간보다 느려 시각이 늘어납니다 (이 PC 시험 · 실시간 비율 0.75: `DONE` 까지 약 61초)
+
+**비행 2 — 결함 주입: 칸 번호 ↔ 마커 번호 불일치** (PX4 부터 다시 시작한 새 비행 — 아래 '재비행'). 미션은 0번 칸 그대로, 터미널 4 만 3번 마커를 찾게 켭니다 — 인터페이스 약속 '목표 칸 번호 = 마커 ID' 를 어김
+```bash
+ros2 run drone_ros2_advanced w05_aruco --ros-args -p target_marker_id:=3
+```
+- 이륙 전 연결 확인은 통과합니다 — 마커 인식 노드는 있음 (미션 노드는 인식 노드가 **어느 번호를** 찾는지 알 수 없음)
+- 0번 칸 위(고도 2 m) 화면에는 0번 마커만 들어옴 → 인식 창: 마커는 보이지만 `No Marker` · 마커 오차를 보내지 않음 → 30초 뒤 14번 줄 → 그 자리 착륙. 로그 (**VM 확인 전 — 이 PC 시험 출력**)
+```
+[IDLE] 연결 확인 완료 — 스캔 · 카메라 정보 · 마커 인식
+…
+[전이] CRUISE → ALIGN | 5번 줄 arrived | 동 +11.7 m (목표 12.0)
+[ALIGN] 마커 대기 0.0 / 30초 | 마커 오차 없음 (기대 ID 0)
+[ALIGN] 마커 대기 1.0 / 30초 | 마커 오차 없음 (기대 ID 0)
+…
+[ALIGN] 마커 대기 29.0 / 30초 | 마커 오차 없음 (기대 ID 0)
+[전이] ALIGN → LAND | 14번 줄 align_timeout | 30초 안에 정렬되지 않음
+착륙 명령 전송
+[전이] LAND → DONE | 6번 줄 landed | 착지 감지
+[미션 기록] 0.0 IDLE | 1.2 TAKEOFF | 3.2 CRUISE | 15.4 AVOID | 21.4 CRUISE | 38.5 ALIGN | 68.5 LAND | 72.4 DONE
+미션 끝 — Ctrl+C 로 노드를 끄세요
+```
+- 표의 줄: 1 → 2 → 3 → 4 → 5 → 14 → 6 (11 · 13번 줄이 없음 = 마커 위 착륙이 빠짐)
+- **결함 격리 (fault isolation)** = 고장 위치의 범위를 좁히는 일: 멈춘 상태 `ALIGN` → 기다리는 사건 `aligned` → 근거 토픽 `/sjcu/error` → 흐름(카메라 → 브리지 → 마커 인식 → 미션 노드)의 **가운데부터** 확인. `DONE` 뒤 미션 노드(터미널 5)를 Ctrl+C 하고 같은 터미널에서 1단계 확인 명령을 다시: ③ 영상 수신 → 앞쪽(카메라 · 브리지) 정상, 원인은 뒤쪽(마커 인식) → ① ② 정상 → ④ `Integer value is: 3` ≠ 목표 칸 0 → **원인**
+- `[ALIGN] 마커 대기` 줄의 이유 칸이 '안 옴' 의 원인을 가릅니다: `마커 오차 없음 (기대 ID 0)` = 영상 · 인식 노드는 있는데 목표 번호 마커가 화면에 없음 (비행 2) / `마커 인식 없음 (발행자 0) → 터미널 4` / `카메라 정보 없음 → 터미널 3`
+
+**상태도 창 `w13_state_viewer` (선택)** — 23강 시뮬레이터와 같은 그림(상태 9개 · 화살표 14개)으로 미션을 실시간으로 봅니다. 터미널을 하나 더 열어 **미션(터미널 5)보다 먼저** 켜면 처음부터 보입니다. PX4 에 명령하지 않으므로 언제 켜고 꺼도 미션에는 영향이 없습니다
+```bash
+ros2 run drone_ros2_advanced w13_state_viewer
+```
+- 위: 상태도 (현재 상태 = 빨강, 방금 쓰인 줄의 화살표 = 빨강, 화살표 옆 숫자 = 표의 줄 번호) · 가운데: 최근 전이 3줄 (`39.6 s  #11  aligned  ALIGN -> DESCEND`) · 아래: 최근 60초 상태 띠 + 앞 거리(±30°) 곡선
+- 표 밖 안전장치는 화살표 없이 최근 전이 줄에만: `safety  px4_takeover  DESCEND -> DONE`. 종료: 창에서 `q`
+- 12주차 `w12_state_viewer` 는 `ALIGN` · `DESCEND` 를 모르므로 13주차에는 이 창을 씁니다. (교수용) `--ros-args -p record:=true` → `~/w13_state_<시각>.csv`
+
+**끝내기**: `미션 끝 — Ctrl+C 로 노드를 끄세요` 가 출력되면 5 → 4 → 3 → 2 → 1 순서로 Ctrl+C (상태도 창은 아무 때나). 비행 중에 끝내려면 1번에서 `pxh> commander land` → 약 1초 뒤 `[전이] … → DONE | 안전장치 px4_takeover` (정렬 · 하강 중에도 같음 — 하강 후반이면 PX4 착륙이 빨라 13번 줄 → 6번 줄로 끝날 수도 있음) → 착지 확인 → 5 → 4 → 3 → 2 → 1. 비행 중에 미션 노드를 먼저 끄면 1초 뒤 PX4 가 Offboard 신호 끊김 비상 동작으로 넘어갑니다
+
+**재비행 — PX4(터미널 1)부터 다시 시작합니다** (끝내기 순서대로 끈 뒤 1 → 2 → 3 → 4 → 5). 노드만 다시 실행하면 착륙한 자리(목표 칸 위)에서 이륙해 바로 `CRUISE → ALIGN` (5번 줄)으로 넘어갑니다
+
+**파라미터** (`ros2 param set /mission_base …`): `fly` 기본 false · `target_slot` 0~4 기본 0 (둘 다 시작할 때만 읽음 — 칸 번호가 0~4 정수가 아니면 이륙하지 않음) · `cruise_speed` 0~0.5 기본 0.5 · `hold_timeout` 1~60 기본 20 · `align_timeout` 1~120 기본 30 (`ALIGN` 에 머문 시간의 합 → 지나면 14번 줄). 뒤의 셋은 비행 중에 바꿀 수 있습니다 (바뀌면 `ALIGN 타임아웃 변경: 30 → 60` 같은 한 줄, 범위 밖 값은 경고 후 이전 값 유지). 순항 · 회피 · `HOLD` 는 12주차와 같고, 정렬 · 하강은 6주차 정밀착륙과 같은 계산에 목표 지점 반경 1.5 m 지오펜스를 더했습니다
+
+**참고: `fly` 를 빼면 드라이 런** — 시작 줄이 `미션 노드 시작 — 드라이 런 (fly:=false)` 이고 비행하지 않습니다(10~12주차와 같은 안전 기본값). 드라이 런의 연결 확인은 스캔 하나이고, 위치를 쓰지 않아 정렬 · 하강은 비행에서만 볼 수 있습니다 (모의 스캔으로 전이를 일으키는 방법은 [`mission_base.py`](drone_ros2_advanced/drone_ros2_advanced/week13/mission_base.py) 머리 주석)
+
+### 막혔을 때
+| 증상 | 원인 → 해결 |
+|------|-------------|
+| `ros2 run … w13_mission` · `w13_bridge` 가 `No executable found` | 빌드 · `source` 빠짐 → 0) 준비 |
+| `[IDLE] 연결 확인 — 스캔 없음 → 터미널 3 (w13_bridge) 실행 확인` (또는 `카메라 정보 없음 → 터미널 3` · `마커 인식 없음 → 터미널 4 (w05_aruco)` · `PX4 위치 없음 → 터미널 2 (Agent) · 1 (PX4)`)만 반복하고 이륙하지 않음 | 연결 확인에서 멈춤 → 그 줄이 가리키는 터미널 확인 (2 = Agent: `MicroXRCEAgent udp4 -p 8888` / 3 = 브리지: `pxh>` 가 뜬 뒤에 켰는지 · 시작 줄 앞 `[경고]` / 4 = 마커 인식). 1단계 확인 명령 ① ② ③ 으로 다시 확인 |
+| 드론이 2 m 로 떠오른 뒤에도 `Offboard 모드 전환` · `Arm 명령 전송` 두 줄만 끝없이 반복 | px4_msgs 가 `release/1.16` 이 아님 → [6주차 절](#6주차-시작-전에-한-번만--px4_msgs-버전-맞추기)의 전환 |
+| Gazebo 가 매우 느림 · 미션 한 번이 너무 오래 걸림 (느린 VM) | 터미널 1 에 `HEADLESS=1` — `&&` 바로 뒤에: `cd ~/PX4-Autopilot && HEADLESS=1 PX4_SYS_AUTOSTART=4001 …` (줄 맨 앞은 효과 없음). 마커 인식 창도 끔: `ros2 run drone_ros2_advanced w05_aruco --ros-args -p display_image:=false` |
+| 도착 뒤 `[ALIGN] 마커 대기 … \| 마커 오차 없음 (기대 ID 0)` 만 반복 → 30초 뒤 14번 줄 (마커 인식이 안 됨) | 터미널 4 가 다른 번호를 찾음 → `ros2 param get /aruco_detector target_marker_id` 가 목표 칸 번호(기본 0)인지 확인. 다르면 터미널 4 Ctrl+C → 같은 번호로 다시 실행 (비행 2 의 결함 주입이 이 경우). 번호가 같고 영상도 오면 마커가 화면 밖 (바람 · 도착 위치 어긋남 — 정렬 상태는 마커를 찾아 움직이지 않음) → 14번 줄로 그 자리 착륙 |
+| `[ALIGN] 마커 대기 … \| 마커 인식 없음 (발행자 0) → 터미널 4` · `… \| 카메라 정보 없음 → 터미널 3` | 그 터미널이 꺼짐 → 다시 실행 → 그 고도에서 다시 정렬 → 하강 → 착륙 |
+| 하강 중 `12번 줄 marker_lost \| 마커 오차 0.5초 없음` → 다시 11번 줄 (몇 번 되풀이) | 마커 검출이 0.5초 넘게 끊김 (프레임 몇 장 연속 미검출 — 느린 PC) → 그 고도에서 다시 정렬 → 하강, 착륙은 이어짐. 잦으면 하강 중 `ros2 topic hz /sjcu/error` 로 검출 주기 확인 · `HEADLESS=1` · 인식 창 끄기 (`display_image:=false`) |
+| `grep w13` 에 `w13_stable_raw` · `w13_stable_base` 도 보임 | 0) 준비의 둘째 줄(옛 빌드 지우기)을 빠뜨림 → 둘째 줄부터 다시 |
+| 브리지 시작 줄 앞에 `[경고] Gazebo에서 … 토픽을 찾지 못했습니다` | 터미널 1 의 기체 · 월드가 다름 / 모델 폴더 복사 빠뜨림 → 경고 안내대로 PX4 Ctrl+C → `pkill -9 -f "gz sim"` → 터미널 1 다시 → 브리지(터미널 3)도 다시 |
+| 이륙하자마자 `CRUISE → ALIGN` | PX4 는 재시작하지 않고 노드만 다시 실행함(이미 목표 칸 위) → PX4 재시작 |
+| 시작 줄에 `목표 칸 5 → 받을 수 없는 값 (0~4 정수) — 이륙하지 않음` | 칸 번호는 0~4 정수 → Ctrl+C 뒤 다시 실행 (`-p target_slot:=1` 처럼) |
 
 ## 4주차 커스텀 World
 ```bash
@@ -920,7 +1050,7 @@ gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construc
 ```
 drone_ros2_advanced/
 ├── config/waypoints.yaml      # 3주차~ waypoint 미션 설정
-├── worlds/                    # Gazebo World (PX4 폴더로 복사해 사용): 4주차 my_custom_world, 8주차 person_world + models/, 10주차 lidar_world, 11주차 obstacle_world
+├── worlds/                    # Gazebo World (PX4 폴더로 복사해 사용): 4주차 my_custom_world, 8주차 person_world + models/, 10주차 lidar_world, 11주차 obstacle_world, 13주차 parking_world + models/(sjcu_parking_markers · x500_lidar_2d_cam_down)
 └── drone_ros2_advanced/
     ├── px4_base.py            # PX4Base 클래스 (base 버전의 부모)
     ├── week02/                # 노드 기초 + 키보드 제어
@@ -932,7 +1062,7 @@ drone_ros2_advanced/
     ├── week10/                # 거리 센서 · LiDAR 지형 추종 (lidar_bridge = w10_lidar_bridge · range_viewer = w10_range_viewer · terrain_follow_base = w10_terrain_follow)
     ├── week11/                # 2D LiDAR 장애물 감지 · 회피 (scan_bridge = w11_scan_bridge · scan_viewer = w11_scan_viewer · avoid_base = w11_avoid)
     ├── week12/                # 상태머신 미션 (mission_table = 전이 조건표 · fsm_sim = w12_fsm_sim · mission_base = w12_mission · state_view = 상태도 그림 · state_viewer = w12_state_viewer)
-    ├── week13/                # 통합 미션 (mission_table = 전이 조건표 14줄 · fsm_sim = w13_fsm_sim · state_view = 상태도 그림)
+    ├── week13/                # 통합 미션 (mission_table = 전이 조건표 14줄 · fsm_sim = w13_fsm_sim · sensor_bridge = w13_bridge · mission_base = w13_mission · state_view = 상태도 그림 · state_viewer = w13_state_viewer)
     ├── week14/                # 심화 (YOLO)
     └── extras/                # 구 커리큘럼 자료 (참고용): GPS/지도(folium·flask 필요), 구 9주차 얼굴 추종 코드, 구 13주차 추종 안정화 코드
 ```

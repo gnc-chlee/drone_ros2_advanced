@@ -211,6 +211,46 @@ cd ~/PX4-Autopilot && PX4_GZ_WORLD=obstacle_world make px4_sitl gz_x500_lidar_2d
 - 스폰 위치의 섹터 값 (계산): 앞 5.38 m (기둥) · 왼쪽 자유 공간 · 오른쪽 3.54 m (벽 서쪽 끝 모서리)
 - 7강 `walls` 월드(PX4 내장)는 벽 폭이 20 m 라 돌아가기에 길어서 이 월드를 따로 만들었습니다
 
+## 13주차 주차장 월드 (parking_world.sdf) · 합성 기체 (x500_lidar_2d_cam_down)
+
+24강(통합 미션 「주차장 지정 칸 착륙」)용. 11주차 기둥 월드의 코스(기둥 1개 + 남쪽 벽)에 주차장(주차칸 5개 + 칸마다 ArUco 마커)을 더한 월드와, 2D LiDAR + 아래 카메라를 함께 단 기체입니다 (Fuel 불필요 — 인터넷 없이 뜸).
+
+```bash
+# 한 번만: 월드 1개 + 모델 폴더(합성 기체 · 마커 그림)를 PX4 로 복사 (8주차에 models/ 를 복사했어도 다시)
+cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+cp parking_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+cp -r models/* ~/PX4-Autopilot/Tools/simulation/gz/models/
+ls ~/PX4-Autopilot/Tools/simulation/gz/models | grep -E "x500_lidar_2d_cam_down|sjcu_parking_markers"     # 두 줄
+# 실행 (남은 Gazebo 서버를 먼저 정리)
+pkill -9 -f "gz sim"
+cd ~/PX4-Autopilot && PX4_SYS_AUTOSTART=4001 PX4_SIM_MODEL=gz_x500_lidar_2d_cam_down PX4_GZ_WORLD=parking_world ./build/px4_sitl_default/bin/px4
+```
+
+- 들어 있는 것: 월드 `parking_world.sdf` + 모델 폴더 2개 — `models/sjcu_parking_markers/`(주차칸 마커 그림 5장 = ArUco `DICT_4X4_50` 의 ID 0~4) · `models/x500_lidar_2d_cam_down/`(합성 기체 = x500 + 2D LiDAR + 아래 카메라). 출처 · 라이선스는 [`models/README.md`](models/README.md)
+- 합성 기체는 `make px4_sitl gz_…` 로 띄울 수 없습니다(그 대상은 PX4 에 airframe 파일이 있는 기체만 만들어짐) → 위처럼 PX4 를 직접 실행합니다. 모델 폴더 복사만으로 뜨고 재빌드 · airframe 추가는 없습니다 (airframe 4001 = 기본 x500 과 같은 파라미터)
+- 폴더 이름 = `<model name>` = `PX4_SIM_MODEL` 의 `gz_` 뒤. Gazebo 안의 기체 이름은 `x500_lidar_2d_cam_down_0`
+- 센서 2개 (링크 · 센서 이름이 기본 기체와 같음 — Gazebo 토픽 이름은 기체 이름 부분만 다르고, 브리지 자동 감지 · ROS 쪽 이름은 그대로):
+  - 2D LiDAR — 링크 `link` / 센서 `lidar_2d_v2`, 1080칸 · ±135° · 0.1~30 m · **10 Hz** (PX4 원본 30 Hz 에서 낮춤 — 2026-11-17 교수 VM: 스캔 평균 약 7.5 Hz)
+  - 아래 카메라 — 링크 `camera_link` / 센서 `imager`, 640 × 480 · 15 Hz (8주차 표준과 같은 값)
+- 기체가 안 뜨면(`pxh>` 는 떠도 Gazebo 에 기체가 없음): 시작 로그의 `[Err] [UserCommands.cc…` 줄 = 스폰 거절 → 모델 폴더 복사 · 폴더 이름 확인 (`GstCameraSystem` 의 `[Err]` 는 카메라 기체에서 날 수 있는 줄 — 무관)
+- 화면 없이(느린 VM): `HEADLESS=1` 을 `&&` 바로 뒤에 — `cd ~/PX4-Autopilot && HEADLESS=1 PX4_SYS_AUTOSTART=4001 …` (줄 맨 앞에 쓰면 `cd` 에만 걸려 효과 없음)
+
+| 모델 | `<pose>` (ENU) | 크기 (x·y·z) | 범위 |
+|------|------|------|------|
+| `pillar` (기둥) | 6.0 0 2.0 | 1 × 1 × 4 m | 동 5.5~6.5, 북 −0.5~0.5 (11주차와 같음) |
+| `south_wall` (남쪽 벽) | 7.5 −3.1 2.0 | 11 × 0.2 × 4 m | 동 2~13, 북쪽 면 = 북 −3.0 (11주차와 같음) |
+| `parking_floor` (주차 바닥) | 19 0 0.005 | 19 × 7 × 0.01 m | 동 9.5~28.5, 북 −3.5~3.5 |
+| `parking_marker_0` ~ `_4` (마커 판) | 12.0 + 3.5 × N, 0, 0.012 | 0.6 × 0.6 m 평면 (그림만 — 충돌 없음) | N번 칸 = 동 12.0 · 15.5 · 19.0 · 22.5 · 26.0 |
+| `building_1` (건물) | 21 23.5 4.0 | 10 × 6 × 8 m | 동 16~26, 북 20.5~26.5 |
+| `start_pad` (시작 표시) | 0 0 0.001 | 반지름 2 m (그림만) | 드론이 뜨는 자리 |
+
+- **N번 칸 마커 중심 = 목표 지점 = 동 (12 + 3.5 × N) m · 북 0** → PX4 좌표 (북 0, 동 12 + 3.5 × N). 0번 칸 = 11 · 12주차 목표 자리 (동 12 m)
+- 칸 = 폭 3.5 m × 깊이 6 m (주차선 동 10.25 · 13.75 · 17.25 · 20.75 · 24.25 · 27.75). 마커 그림은 칸 번호와 같은 ID — 24강 미션 노드의 `target_slot` 과 마커 인식의 `target_marker_id` 를 같은 번호로
+- 드론은 원점에서 동쪽을 봄 → 기둥에서 왼쪽(북쪽)으로 돌아간 뒤 0번 칸 위에 도착. 북쪽에 건물이 있어 스캔의 왼쪽 섹터는 '자유 공간' 대신 건물까지의 거리(약 24 m — 계산)로 찍힘 (회피 방향은 11주차와 같음)
+- 고도 2 m 의 아래 카메라 화면(땅 약 5.0 × 3.7 m — 계산)에는 한 번에 한 칸의 마커만 들어옴
+- 마커 판 · 주차선 · 시작 표시는 그림만(`<visual>`) — 밟아도 턱이 없음. 그림자는 두 곳 모두 끔 (그림자 경계가 마커 위를 지나면 인식이 끊김)
+- 원점 스폰에서는 `w06_land` 를 쓰지 않습니다 — 고도 4 m 직선 이동이 높이 4 m 기둥을 스침
+
 ## 자주 나는 오류
 
 | 증상 | 원인 | 해결 |

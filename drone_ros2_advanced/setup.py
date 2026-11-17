@@ -96,9 +96,14 @@ setup(
             'w12_state_viewer = drone_ros2_advanced.week12.state_viewer:main',
 
             # ── 13주차: 통합 시나리오 설계 · 통합 미션 ──────────────
-            #    수업용: w13_fsm_sim (23강, PX4 없음 — 통합 미션 표 14줄) / 24강 실행 파일은 VM 확인 뒤 추가
+            #    수업용: w13_fsm_sim (23강, PX4 없음 — 통합 미션 표 14줄) / w13_bridge + w05_aruco + w13_mission (24강)
+            #    (기본 = 드라이 런, --ros-args -p fly:=true 로 비행. 목표 칸 target_slot 기본 0 = w05_aruco 의 target_marker_id 와 같은 번호)
+            #    w13_state_viewer = 상태도 창 (선택, PX4 에 명령 안 함 — 23강 시뮬레이터 창과 같은 그림)
             #    (옛 13주차 얼굴 추종 안정화 코드는 extras/ 로 옮김 — 실행 이름 없음)
             'w13_fsm_sim = drone_ros2_advanced.week13.fsm_sim:main',
+            'w13_bridge = drone_ros2_advanced.week13.sensor_bridge:main',
+            'w13_mission = drone_ros2_advanced.week13.mission_base:main',
+            'w13_state_viewer = drone_ros2_advanced.week13.state_viewer:main',
 
             # ── 14주차: 심화 (YOLO) ──────────────────────────────
             'w14_yolo = drone_ros2_advanced.week14.yolo_detector:main',

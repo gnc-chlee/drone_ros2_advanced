@@ -1,0 +1,971 @@
+#!/usr/bin/env python3
+# ==============================================================================
+# File    : mission_base.py  (13주차 24강)
+# Author  : Choonghyun Lee (gnc-chlee)
+# Date    : 2026-11-17
+# Version : 1.0.0
+#
+# Description:
+#   통합 미션 「주차장 지정 칸 착륙」 노드 — 실행하면 이륙부터 마커 위 착륙까지 자동 수행
+#     이륙 → 순항 · 기둥 회피 → 목표 칸 도착 → 마커 정렬 → 하강 → 착륙
+#   12주차 미션 노드(week12/mission_base.py)의 사본에 6주차 정밀착륙(정렬 → 하강)을 상태 두 개로 더한 것
+#   (PX4Base 상속 · 전이 조건표 14줄은 mission_table.py · 섹터 계산과 회피 상수는 week11/avoid_base.py ·
+#    정렬 · 하강 상수는 week06/precision_land_base.py 에서 가져옴)
+#
+#   0.1초 주기로 세 단계 반복 (on_update) — 12주차와 같음:
+#     ① sense()      : 사건 판정 — 입력(PX4 상태 · 스캔 · 마커 오차 · 시간) → 사건 이름들 (조건이 충족된 사건 모두)
+#     ② next_state() : 표 조회 — 표 밖 안전장치 2줄을 먼저, 그다음 전이 조건표 14줄을 위 줄부터 → 다음 상태
+#     ③ do[상태]()   : 상태별 동작 (명령 1번)
+#     상태 전이는 go() 한 곳에서만: [전이] 로그 → 나갈 때 · 들어갈 때 한 번 하는 일 → 전이 · 상태 발행
+#
+#   12주차와 달라진 점 (표: 5번 줄의 다음 상태 LAND → ALIGN · 새 줄 11~14):
+#     - 목표 도착(5번 줄) 뒤 바로 착륙하지 않고 ALIGN: 아래 카메라의 마커 오차로 마커 바로 위로 정렬
+#       → 정렬 1.0초 유지(11번 줄) → DESCEND: 정렬을 유지하며 고도 1 m 까지 하강 → 13번 줄 LAND
+#       하강 중 마커 상실 → 12번 줄 ALIGN (그 고도에서 다시 정렬) · ALIGN 에 머문 시간의 합 30초 → 14번 줄 그 자리 착륙
+#     - 목표 지점 = 목표 칸 마커 중심 = 동 (12 + 3.5 × 칸 번호) m · 북 0
+#       (파라미터 target_slot, 기본 0 = 12주차 목표와 같은 자리. 기대 마커 ID = 칸 번호)
+#     - IDLE 연결 확인 셋: 스캔 수신 · 카메라 정보 수신 · 마커 인식 노드(/sjcu/error 발행자 1 이상)
+#       → 모두 되어야 Offboard + Arm 요청. 빠진 것은 터미널 번호로 안내
+#       (PX4 위치도 와야 요청한다 — 안 오면 'PX4 위치 없음 → 터미널 2 (Agent) · 1 (PX4)' 를 같은 주기로 안내)
+#     - LAND: PX4 Land 모드 확인 전까지 속도 0 (12주차의 고도 유지 식은 2 m 로 돌아가려 해 1 m 에서 상승 명령이 됨)
+#
+#   정밀착륙 사건 4개 (마커 사건은 ALIGN · DESCEND 에서만 판정 — 다른 상태에서는 화면에 마커가 없는 것이 정상):
+#     aligned       : 마커 오차(고도 보정)가 화면 반폭의 5 % 미만으로 1.0초 유지 (ALIGN 에 들어올 때마다 처음부터 셈)
+#     marker_lost   : 마커 오차 0.5초 없음, 또는 하강 정체 (DESCEND 에서 5초 동안 고도가 0.1 m 도 줄지 않음)
+#                     → 전이 로그의 이유 칸이 둘을 구분: '마커 오차 0.5초 없음' / '하강 정체 5.0초'
+#     descended     : 상대 고도 1.0 m 이하 + 정렬 오차 5 % 미만
+#     align_timeout : ALIGN 에 머문 시간의 합이 align_timeout (기본 30초 — 하강 정체로 ALIGN ⇄ DESCEND 가 되풀이돼도 끝남)
+#
+#   표 밖 안전장치 2줄 (mission_table.SAFETY — 표보다 먼저 본다, 전이 로그에는 '안전장치'. 12주차와 같음):
+#     px4_takeover : 비행 중(정렬 · 하강 포함) Offboard 가 아닌 채 1초 (사람이 pxh> commander land · PX4 비상 동작)
+#                    → DONE: 재요청 없이 명령 중단 (조종권 이양)
+#     dead_end     : AVOID 에서 막다른 곳 (양옆 막힘 · 재탐색 뒤에도 막힘 · 30초) → LAND
+#
+#   안전 필터는 상태와 별개:
+#     순항 · 회피 (_send, 12주차와 같음) : 근접 · 옆 안전 거리 · 지오펜스 북 ±3 m · 상대 고도 5 m · 사각지대(후진 없음)
+#     정렬 · 하강 (_fence)              : 지오펜스 = 목표 지점에서 반경 1.5 m 밖으로 나가는 성분만 0
+#                                          (마커 쪽으로 되돌아오는 후진은 허용. 스캔은 쓰지 않는다 — 표에 스캔 줄 없음)
+#
+#   구독 토픽:
+#     /lidar/scan                     : LaserScan (w13_bridge)
+#     /camera/camera_info             : 화면 폭 (w13_bridge)
+#     /sjcu/error                     : 마커 오차 [x, y, 크기] px (w05_aruco — 목표 ID 를 찾은 프레임에서만 온다)
+#     /fmu/out/vehicle_local_position : 상대 고도(−z) · 동쪽 위치(y) · 북쪽 위치(x)
+#   발행 토픽 (12주차와 같은 이름 · 형식 — 상태도 창이 받음):
+#     /sjcu/mission_state             : String 상태 이름 (전이 때마다, 나중에 켠 구독자도 마지막 값을 받음)
+#     /sjcu/mission_transition        : String 전이 한 줄 '38.5 | CRUISE → ALIGN | 5 arrived | 동 +11.7 m (목표 12.0)'
+#                                       (미션 시작 뒤 시각 | 전이 | 표의 줄 번호 사건 | 이유)
+#                                       안전장치면 줄 번호 자리에 safety: '45.2 | DESCEND → DONE | safety px4_takeover | …'
+#     PX4 명령은 PX4Base 가 맡음
+#
+#   준비 (한 번만): 월드 1개 + 모델 폴더(합성 기체 · 마커 그림)를 PX4 로 복사
+#     cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+#     cp parking_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+#     cp -r models/* ~/PX4-Autopilot/Tools/simulation/gz/models/
+#
+#   실행 방법 (24강 — PX4 에 명령하는 노드는 5번 하나):
+#     터미널 1: pkill -9 -f "gz sim"
+#               cd ~/PX4-Autopilot && PX4_SYS_AUTOSTART=4001 PX4_SIM_MODEL=gz_x500_lidar_2d_cam_down PX4_GZ_WORLD=parking_world ./build/px4_sitl_default/bin/px4
+#     터미널 2: MicroXRCEAgent udp4 -p 8888
+#     터미널 3: ros2 run drone_ros2_advanced w13_bridge         ← pxh> 가 뜬 뒤에! (스캔 + 영상 + 카메라 정보)
+#     터미널 4: ros2 run drone_ros2_advanced w05_aruco          ← 0번 칸이면 파라미터 없음
+#     터미널 5: ros2 run drone_ros2_advanced w13_mission --ros-args -p fly:=true
+#     다른 칸 (0~4): 터미널 4 · 5 에 같은 번호 — 예: 2번 칸
+#               ros2 run drone_ros2_advanced w05_aruco --ros-args -p target_marker_id:=2
+#               ros2 run drone_ros2_advanced w13_mission --ros-args -p fly:=true -p target_slot:=2
+#     상태도 창(w13_state_viewer)은 선택 — 터미널을 하나 더 열어 미션보다 먼저
+#     브리지가 막히면 기존 브리지 둘을 따로: 터미널 3 = w11_scan_bridge, 터미널 하나 더 = w05_camera_bridge
+#
+#   끝내기: DONE 이 찍히면 5 → 4 → 3 → 2 → 1 순서로 Ctrl+C
+#     비행 중에 끝내려면 pxh> commander land → 약 1초 뒤 안전장치로 DONE (하강 후반이면 13번 줄 → 6번 줄) → 착지 확인 → Ctrl+C
+#     (비행 중에 이 노드를 먼저 끄면 1초 뒤 PX4 가 'Offboard 신호 끊김' 비상 동작으로 넘어간다)
+#   다시 비행: PX4(터미널 1)부터 다시 시작 — 노드만 다시 켜면 그 자리(목표 칸 위)에서 이륙해 바로 정렬로 넘어간다
+#
+#   결함 주입 (fault injection) — 일부러 문제를 넣고 시스템이 어떻게 반응하는지 본다:
+#     24강 비행 2 — 칸 번호 ↔ 마커 번호 불일치 (미션은 0번 칸 그대로, PX4 부터 다시 시작):
+#       터미널 4: ros2 run drone_ros2_advanced w05_aruco --ros-args -p target_marker_id:=3
+#       → 이륙 전 연결 확인은 통과 (마커 인식 노드는 있음 — 어느 번호를 찾는지는 미션 노드가 모른다)
+#       → 도착 → [ALIGN] 마커 대기 … | 마커 오차 없음 (기대 ID 0) → 30초 → 14번 줄 → 그 자리 착륙 → 6번 줄
+#     (교수 시연) 하강 중 마커 인식(터미널 4) Ctrl+C → 0.5초 뒤 12번 줄 ALIGN (마커 인식 없음 → 터미널 4 안내)
+#                 → 다시 실행 → 11 → 13 → 6번 줄
+#     브리지(터미널 3) Ctrl+C: 순항 · 회피 중이면 12주차와 같음 (0.5초 뒤 HOLD → 스캔이 1초 이어지면 CRUISE
+#                 / 20초 안에 복구되지 않으면 LAND). 정렬 · 하강 중이면 스캔 줄은 없지만 영상도 끊겨
+#                 하강 중이면 12번 줄 → ALIGN 대기 (2초 뒤 '카메라 정보 없음 → 터미널 3') → 다시 실행하면 이어서 착륙
+#     ALIGN 의 마커 대기 줄은 '안 옴' 의 원인을 가른다: 카메라 정보 없음 (터미널 3) · 마커 인식 없음 (발행자 0, 터미널 4)
+#                 · 마커 오차 없음 (기대 ID k — 둘 다 있는데 목표 번호 마커가 화면에 없음 = 비행 2,
+#                   또는 바람 · 위치 어긋남으로 마커가 화면 밖. 정렬은 마커를 찾아 움직이지 않으므로 30초 뒤 14번 줄)
+#     마커 상실 0.5초 = 오차가 오지 않은 시간 (끊긴 검출 + 앞뒤 프레임 간격) — 15 Hz · 실시간 비율 0.75 면 연속 4장 정도까지
+#
+#   참고: fly 를 빼면 드라이 런 (비행하지 않음, PX4·Agent 없어도 됨 — 브리지 터미널 3 은 끈다):
+#     ros2 run drone_ros2_advanced w13_mission
+#     (새 터미널) ros2 topic pub -r 10 /lidar/scan sensor_msgs/msg/LaserScan \
+#                   "{angle_min: -1.0472, angle_increment: 1.0472, range_min: 0.1, range_max: 30.0, ranges: [2.0, 5.0, .inf]}"
+#     → 칸 3개 = −60° · 0° · +60° = 오른쪽 · 앞 · 왼쪽. ranges 를 바꾸면 전이가 일어난다 (12주차와 같음)
+#       [2.0, 1.2, .inf] → AVOID  /  [2.0, 5.0, .inf] → CRUISE  /  [2.0, -.inf, .inf] → HOLD (너무 가까움)
+#     ※ 드라이 런의 연결 확인은 스캔 하나. 위치를 쓰지 않아 도착이 없다 → ALIGN · DESCEND 는 비행에서만
+#
+# Repository:
+#   https://github.com/gnc-chlee/drone_ros2_advanced
+#
+# License : MIT
+# ==============================================================================
+
+import math
+import time
+import rclpy
+from rclpy.executors import ExternalShutdownException
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from rcl_interfaces.msg import ParameterDescriptor
+from px4_msgs.msg import VehicleLocalPosition
+from sensor_msgs.msg import CameraInfo, LaserScan
+from std_msgs.msg import Float32MultiArray, String
+
+from ..px4_base import PX4Base, PX4_QOS
+from ..week11.avoid_base import (   # 11주차 VM 에서 확인한 함수 · 상수를 그대로 쓴다 (스캔 타임아웃만 아래 자체 상수)
+    ARRIVE_TOL, CLEAR_GAP, CREEP, GOAL_EAST, K_RET, KZ, LAT_LIMIT, LOG_PERIOD, MAX_CRUISE, MAX_REL_ALT,
+    MAX_VZ, NEAR_DEG, REAR_DEG, RECOVER_TIME, RET_DONE, SAFE_DIST, SIDE_DEG, STEP, TARGET_ALT, TIE_BAND,
+    as_bool, clamp, dist_text, floor2, sector_min, sectors_text, side_name, signed,
+)
+from ..week06.precision_land_base import (   # 6주차 정밀착륙 상수 8개 그대로 (VM 에서 정밀착륙 성공한 값)
+    ALIGN_ALT,       # 고도 보정 기준 4.0 m (6주차 비행 고도) — 오차에 (고도 / 4 m) 를 곱함
+    ALIGN_HOLD,      # 정렬 완료: 이 시간 유지 1.0 s
+    ALIGN_TOL,       # 정렬 완료 기준: 오차가 화면 반폭의 5 % 미만
+    DESCEND_SPEED,   # 정렬이 완벽할 때의 하강 속도 0.3 m/s
+    LAND_ALT,        # 이 고도(1.0 m)에서 정렬을 다시 확인한 뒤 PX4 착륙에 맡김
+    LOST_TIMEOUT,    # 마커 오차가 이 시간(0.5 s) 동안 안 오면 마커 상실
+    MAX_SPEED,       # 정렬 속도 상한 0.5 m/s
+    STOP_ERR,        # 오차가 화면 반폭의 10 % 이상이면 하강을 완전히 멈춤
+)
+from .mission_table import (
+    ALIGN, AVOID, CRUISE, DESCEND, DONE, HOLD, IDLE, LAND, SAFETY, TAKEOFF, TRANSITIONS, next_state, rule_label,
+)
+
+
+# ================================================================
+# [USER DEFINE] 미션 상수
+# ================================================================
+STOP_DIST  = 1.5     # 정지 판단 거리 [m] — front_blocked
+CLEAR_DIST = STOP_DIST + CLEAR_GAP   # 해제 거리 [m] = 2.0 — front_clear. 둘이 달라서 히스테리시스
+V_SIDE     = 0.3     # 좌우 이동 속도 [m/s]
+K_SLOW     = 0.33    # 감속 비례 상수 [1/s]: 전진 속도 = K_SLOW × (앞 거리 − 정지 판단 거리)
+FRONT_DEG  = 30.0    # 앞 섹터 반각 [°]
+AVOID_TIMEOUT = 30.0 # AVOID 타임아웃 [s] — 넘으면 막다른 곳으로 본다
+
+# 주차장 (parking_world): N번 칸 마커 중심 = 동 (12 + 3.5 × N) m · 북 0 — 0번 칸 = 12주차 목표 자리 (동 12 m)
+SLOT_GAP   = 3.5     # 칸 간격 [m]
+SLOT_MAX   = 4       # 칸 번호 0~4
+GOAL_NORTH = 0.0     # 목표 지점(마커 중심)의 북쪽 위치 [m]
+
+# 정렬 · 하강 (6주차 상수 8개는 위에서 import)
+KP           = 1.5   # 정렬 비례 게인 (6주차 기본값): 속도 = KP × 고도 보정 오차 → 최대 MAX_SPEED
+ALIGN_RADIUS = 1.5   # 정렬 이동 한계 = 지오펜스 [m]: 목표 지점에서 이만큼 밖으로는 나가지 않음 (남쪽 벽까지 1.5 m)
+STALL_TIME   = 5.0   # 하강 정체: 이 시간 동안 [s]
+STALL_DROP   = 0.1   #           고도가 이만큼도 줄지 않으면 [m] → marker_lost (12번 줄 ALIGN 으로)
+
+# 스캔 타임아웃 (week13 자체 상수 — 12주차는 11주차 값을 import)
+#   VM 실측 (2026-11-17): 합성 기체 LiDAR 10 Hz · 실시간 비율 약 0.75 → 스캔 간격 최대 0.177 s → 0.5초 유지
+SCAN_TIMEOUT = 0.5   # 유효한 스캔이 이 시간 없으면 sensor_bad [s]
+
+# 파라미터 (기본값, 받는 범위, 바뀌었을 때 찍는 말)
+#   hold_timeout 기본 20초: 10초로는 VM 에서 브리지를 바로 다시 실행해도 스캔이 돌아오기 전에 LAND 로 넘어갔다 (2026-11-11 실측)
+#   align_timeout 기본 30초: 초안 — VM 실측 뒤 확정 (설계안 2-2)
+PARAMS = {
+    'cruise_speed':  (0.5,  0.0, MAX_CRUISE, '전진 속도 변경:'),
+    'hold_timeout':  (20.0, 1.0, 60.0,       'HOLD 타임아웃 변경:'),
+    'align_timeout': (30.0, 1.0, 120.0,      'ALIGN 타임아웃 변경:'),
+}
+
+# ── [복붙 영역] 시간 상수 ─────────────────────────────────────────
+ALT_TOL        = 0.2   # 이륙 완료 고도 오차 [m]
+TAKEOVER_TIME  = 1.0   # Offboard 가 아닌 채 이만큼이면 PX4 가 조종권을 가져간 것으로 본다 [s] (상태 메시지 지연 대비)
+LAND_RETRY     = 2.0   # 착륙 요청 뒤에도 Offboard 면 이 간격으로 다시 요청 [s]
+DRY_WAIT       = 1.0   # 드라이 런: PX4 사건(ready · airborne · landed)이 저절로 생길 때까지 [s]
+INFO_TIMEOUT   = 2.0   # 연결 확인: 카메라 정보가 이 시간 안에 왔으면 수신 중 [s]
+
+# 연결 확인 셋 — 빠지면 안내할 터미널 (터미널 3 = 브리지 하나가 스캔 · 영상 · 카메라 정보를 함께 보냄)
+ERROR_TOPIC = '/sjcu/error'
+LINK_TERMINAL = {'스캔': '3 (w13_bridge)', '카메라 정보': '3 (w13_bridge)', '마커 인식': '4 (w05_aruco)'}
+
+# PX4 비행 모드 이름표 (VehicleStatus.nav_state 번호 → 로그에 찍는 이름). 나머지는 'nav_state 번호'
+NAV_NAMES = {2: 'Position', 4: 'Hold', 5: 'Return', 14: 'Offboard', 18: 'Land'}
+
+# 상태 토픽 QoS — 나중에 켠 w13_state_viewer 도 현재 상태를 바로 받도록 마지막 값을 보관
+STATE_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+
+
+def dist_m(value):
+    """섹터 값 → 글자 + 단위: '1.20 m' · '자유 공간' · '측정 없음' (숫자일 때만 m)"""
+    return dist_text(value) + (' m' if value is not None and math.isfinite(value) else '')
+
+
+def slot_number(raw):
+    """target_slot 파라미터 값 → 칸 번호 0~4 (int). 받을 수 없는 값(범위 밖 · 소수 · 글자 · true/false)이면 None"""
+    if isinstance(raw, bool):                   # true/false 는 숫자가 아님 (int(True) = 1 방지)
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value) or value != int(value):
+        return None
+    value = int(value)
+    return value if 0 <= value <= SLOT_MAX else None
+
+
+class MissionBase(PX4Base):
+    def __init__(self):
+        super().__init__('mission_base')
+
+        # ── 파라미터 ─────────────────────────────────────────────
+        #    fly           : False 면 드라이 런 (arm·이륙·속도 명령 없음). 시작할 때만 읽음
+        #    target_slot   : 목표 칸 번호 0~4 (= 기대 마커 ID). 시작할 때만 읽음 — 받을 수 없는 값이면 이륙하지 않음
+        #    cruise_speed  : 전진 속도 [m/s] 0~0.5
+        #    hold_timeout  : HOLD 타임아웃 [s] 1~60
+        #    align_timeout : ALIGN 타임아웃 [s] 1~120 (ALIGN 에 머문 시간의 합)
+        #    아래 셋은 0.1초마다 다시 읽는다 → ros2 param set 으로 비행 중에 바꿀 수 있음
+        self.param_warn_at = {}   # 파라미터 경고를 마지막으로 찍은 시각 (이름마다)
+        self.declare_parameter('fly', False, ParameterDescriptor(dynamic_typing=True))
+        self.fly = as_bool(self.get_parameter('fly').value)
+        self.declare_parameter('target_slot', 0, ParameterDescriptor(dynamic_typing=True))
+        self.slot_raw = self.get_parameter('target_slot').value
+        self.target_slot = slot_number(self.slot_raw)    # None = 받을 수 없는 값 → 이륙하지 않음
+        self.goal_east = GOAL_EAST + SLOT_GAP * (self.target_slot or 0)   # 목표 지점 동쪽 [m] (0번 칸 = 12.0)
+        for name, (default, _, _, _) in PARAMS.items():
+            self.declare_parameter(name, default, ParameterDescriptor(dynamic_typing=True))
+            setattr(self, name, default)
+            self._read_param(name, start=True)
+
+        # ============================================================
+        # [USER DEFINE] 구독 4개 · 발행 2개 (12주차 + 마커 오차 · 카메라 정보)
+        # ============================================================
+        self.create_subscription(
+            LaserScan, '/lidar/scan', self._scan_callback, qos_profile_sensor_data)
+        self.create_subscription(
+            VehicleLocalPosition, '/fmu/out/vehicle_local_position', self._position_callback, PX4_QOS)
+        self.create_subscription(
+            Float32MultiArray, ERROR_TOPIC, self._error_callback, 10)            # 6주차와 같은 구독
+        self.create_subscription(
+            CameraInfo, '/camera/camera_info', self._camera_info_callback, 10)
+        self.state_pub = self.create_publisher(String, '/sjcu/mission_state', STATE_QOS)
+        self.transition_pub = self.create_publisher(String, '/sjcu/mission_transition', 10)
+
+        # ── 입력 값 ──────────────────────────────────────────────
+        self.position   = None    # 마지막 VehicleLocalPosition
+        self.scan       = None    # 마지막 유효한 LaserScan
+        self.scan_at    = None    # 그 스캔을 받은 시각 [s]
+        self.good_since = None    # 유효한 스캔이 끊기지 않고 이어진 첫 시각 [s]
+        self.neg        = 0       # 마지막 스캔의 -inf 칸 수 (너무 가까움)
+        self.bad_logged = False   # '칸 정보가 이상한 스캔' 경고를 한 번만
+        self.sec        = {}      # 이번 틱의 섹터 값 (None = 측정 없음, 빈 사전 = 스캔 끊김)
+        self.off_since  = None    # Offboard 가 아닌 것을 처음 본 시각 [s]
+        self.x_error = self.y_error = 0.0   # 마지막 마커 오차 [px] (마커 중심 − 화면 중심)
+        self.last_seen  = None    # 마지막으로 마커 오차를 받은 시각 [s]
+        self.image_w    = None    # 화면 폭 [px] (카메라 정보에서)
+        self.info_at    = None    # 마지막으로 카메라 정보를 받은 시각 [s]
+
+        # ── 상태 ─────────────────────────────────────────────────
+        self.start       = time.monotonic()
+        self.state       = IDLE
+        self.state_since = self.start
+        self.history     = [(0.0, IDLE)]  # [미션 기록]: (시각, 상태)
+        self.idle_ticks  = 0      # IDLE 에서 흐른 틱 수 (요청 재시도 · 연결 안내용)
+        self.links_ok    = False  # 연결 확인 셋이 모두 된 것을 알렸는지
+        self.takeoff_xy  = (math.nan, math.nan)   # 이륙 자리 (NED x, y) [m]
+        self.side        = 0      # AVOID 방향: -1 = 왼쪽, +1 = 오른쪽
+        self.flipped     = False  # AVOID 에서 재탐색을 이미 했는지
+        self.dead_why    = ''     # 막다른 곳 이유 (로그용)
+        self.land_at     = 0.0    # 마지막 착륙 요청 시각 [s]
+        self.last_vx = self.last_vy = 0.0    # 직전 틱에 보낸 몸체 속도 [m/s] (가속도 제한용)
+        self.last_tag    = None   # 직전에 찍은 줄 태그 (바뀌면 바로 한 줄)
+        self.last_log_at = -math.inf
+        self.err         = 0.0    # 이번 틱의 정렬 오차 (고도 보정, 화면 반폭 = 1)
+        self.aligned_since = None # 정렬 오차가 5 % 미만이 된 시각 [s] (ALIGN 에 들어올 때마다 처음부터)
+        self.align_total = 0.0    # 지난 ALIGN 에 머문 시간의 합 [s] (align_timeout 은 합으로 판정)
+        self.stall_alt   = 0.0    # 하강 정체 기준 고도 [m] (0.1 m 내려갈 때마다 새로)
+        self.stall_at    = 0.0    # 그 기준을 정한 시각 [s]
+        self.lost_why    = ''     # marker_lost 이유 (로그용: 마커 오차 없음 / 하강 정체)
+
+        # 들어갈 때 · 나갈 때 한 번 하는 일 · 상태별 동작(매 틱)
+        self.enter = {TAKEOFF: self._enter_takeoff, AVOID: self._enter_avoid, HOLD: self._enter_hold,
+                      ALIGN: self._enter_align, DESCEND: self._enter_descend, LAND: self._enter_land,
+                      DONE: self._enter_done}
+        self.leave = {ALIGN: self._leave_align}
+        self.do = {IDLE: self._do_idle, TAKEOFF: self._do_takeoff, CRUISE: self._do_cruise, AVOID: self._do_avoid,
+                   HOLD: self._do_hold, ALIGN: self._do_align, DESCEND: self._do_descend, LAND: self._do_land,
+                   DONE: self._do_done}
+
+        self.state_pub.publish(String(data=self.state))
+        self.create_timer(0.1, self.on_update)   # 10Hz
+
+        mode = '비행 (fly:=true)' if self.fly else '드라이 런 (fly:=false)'
+        k = self.target_slot
+        if k is None:
+            goal = f'목표 칸 {self.slot_raw} → 받을 수 없는 값 (0~{SLOT_MAX} 정수) — 이륙하지 않음'
+        else:
+            goal = f'목표 칸 {k} → 목표 지점 동 {self.goal_east:.1f} m · 기대 마커 ID {k}'
+        hints = ['끝내기: DONE 뒤 Ctrl+C · 비행 중에 끝내려면 pxh> commander land' if self.fly else
+                 '비행하지 않음 (비행: --ros-args -p fly:=true) — 모의 스캔은 브리지(터미널 3)를 끄고 ros2 topic pub']
+        if k is not None and k != 0:
+            hints.append(f'{k}번 칸 → 터미널 4 도 같은 번호: ros2 run drone_ros2_advanced w05_aruco '
+                         f'--ros-args -p target_marker_id:={k}')
+        self.get_logger().info(
+            f'미션 노드 시작 — {mode} | {goal} | 전진 속도 {self.cruise_speed:g} m/s | '
+            f'HOLD 타임아웃 {self.hold_timeout:g} s · ALIGN 타임아웃 {self.align_timeout:g} s'
+            + ''.join(f'\n  {h}' for h in hints))
+        if k is None:
+            self.get_logger().error(
+                f'target_slot {self.slot_raw!r} 는 받을 수 없는 값 — 칸 번호는 0~{SLOT_MAX} 정수. 이륙하지 않음 → '
+                f'Ctrl+C 뒤 다시 실행 (예: --ros-args -p fly:=true -p target_slot:=1)')
+
+    # ============================================================
+    # 메인 루프 (10Hz) — 세 단계뿐
+    # ============================================================
+    def on_update(self):
+        self._read_params()
+        events = self.sense()                         # ① 사건 판정: 입력 → 사건 이름들
+        # ② 표 조회: 표 밖 안전장치 2줄을 먼저, 그다음 전이 조건표 14줄을 위 줄부터 (표를 꼭 넘긴다 — 13주차 표)
+        next_s, event = next_state(self.state, events, SAFETY + TRANSITIONS)
+        if next_s != self.state:
+            self.go(next_s, event)                    # 로그 · 나갈 때 · 들어갈 때 하는 일 · 상태 발행은 여기 한 곳
+        self.do[self.state]()                         # ③ 상태별 동작 (명령 1번)
+
+    # ============================================================
+    # ① 사건 판정 — 입력을 사건 이름으로 바꿀 뿐, 다음 상태는 표가 정한다
+    # ============================================================
+    def sense(self):
+        now = time.monotonic()
+        events = set()
+        self._sense_px4(events, now)            # PX4: ready · airborne · landed · px4_takeover
+
+        # 센서 (2D LiDAR) — 12주차와 같음
+        live = self._scan_live(now)
+        self.sec = self._sectors(self.scan) if live else {}
+        if not live or self.neg > 0:
+            events.add('sensor_bad')
+        else:
+            front, left, right = self._front_left_right()
+            near = self._sec_value('near')
+            if self.scan_at - self.good_since >= RECOVER_TIME:
+                events.add('sensor_ok')
+            if front < STOP_DIST or near < SAFE_DIST:         # 히스테리시스 — 정지 판단 1.5 m 미만
+                events.add('front_blocked')
+            if front >= CLEAR_DIST and near >= SAFE_DIST:     # 해제 2.0 m 이상
+                events.add('front_clear')
+            if self.state == AVOID and self._is_dead_end(now, left, right):
+                events.add('dead_end')
+
+        # 아래 카메라 (마커 오차) — 정밀착륙 사건
+        self._sense_marker(events, now)
+
+        # 미션 (드라이 런은 위치를 쓰지 않아 도착이 없다)
+        if self.fly and self.position is not None and self.position.y >= self.goal_east - ARRIVE_TOL:
+            events.add('arrived')
+
+        # 시간
+        if self.state == HOLD and now - self.state_since >= self.hold_timeout:
+            events.add('hold_timeout')
+        if self.state == ALIGN and self._align_time(now) >= self.align_timeout:
+            events.add('align_timeout')
+        return events
+
+    def _sense_px4(self, events, now):
+        if self.target_slot is None:            # 받을 수 없는 칸 번호: 이륙하지 않는다 (ready 없음)
+            return
+        if not self.fly:                        # 드라이 런: PX4 없이 잠깐 뒤 저절로 생긴 것으로 본다
+            if now - self.state_since >= DRY_WAIT:
+                if self.state == IDLE and self._scan_live(now):
+                    events.add('ready')
+                elif self.state == TAKEOFF:
+                    events.add('airborne')
+                elif self.state == LAND:
+                    events.add('landed')
+            return
+        if self.is_offboard and self.is_armed:  # PX4Base 가 알려주는 상태
+            self.off_since = None
+            events.add('ready')
+        elif self.off_since is None:
+            self.off_since = now
+        if self.off_since is not None and now - self.off_since >= TAKEOVER_TIME:
+            events.add('px4_takeover')
+        if self.position is not None and abs(self.position.z + TARGET_ALT) < ALT_TOL:
+            events.add('airborne')
+        if self.is_landed:
+            events.add('landed')
+
+    def _sense_marker(self, events, now):
+        """정밀착륙 사건 — ALIGN · DESCEND 에서만 판정
+           marker_lost : 마커 오차 0.5초 없음 (ALIGN 에서는 표에 줄이 없어 그대로 대기) · DESCEND 의 하강 정체
+           aligned     : ALIGN 에서 정렬 오차 < 5 % 가 1.0초 유지 (6주차와 같은 셈)
+           descended   : 상대 고도 1.0 m 이하 + 정렬 오차 < 5 %"""
+        if self.state not in (ALIGN, DESCEND):
+            return
+        if not self._marker_seen(now):
+            self.aligned_since = None
+            self.lost_why = f'마커 오차 {LOST_TIMEOUT:g}초 없음'
+            events.add('marker_lost')
+            return
+        alt = -self.position.z                  # 상대 고도 [m]
+        self.err = self._marker_err()[2]
+        if self.err < ALIGN_TOL:
+            if alt <= LAND_ALT:
+                events.add('descended')
+            if self.state == ALIGN:
+                if self.aligned_since is None:
+                    self.aligned_since = now    # 정렬됨 — 1.0초 유지되는지 본다
+                elif now - self.aligned_since >= ALIGN_HOLD:
+                    events.add('aligned')
+        else:
+            self.aligned_since = None
+        if self.state == DESCEND and 'descended' not in events and self._stalled(now, alt):
+            self.lost_why = f'하강 정체 {STALL_TIME:.1f}초'
+            events.add('marker_lost')           # 마커는 보이지만 내려가지 못함 → 12번 줄로 정렬부터 다시
+
+    def _stalled(self, now, alt):
+        """하강 정체: DESCEND 에서 STALL_TIME(5초) 동안 고도가 STALL_DROP(0.1 m) 이상 줄지 않음"""
+        if alt <= self.stall_alt - STALL_DROP:  # 0.1 m 이상 내려감 → 기준을 지금으로
+            self.stall_alt, self.stall_at = alt, now
+        return now - self.stall_at >= STALL_TIME
+
+    def _is_dead_end(self, now, left, right):
+        """막다른 곳: 양옆 안전 거리 안 / 재탐색 뒤에도 막힘 / AVOID 타임아웃. 이유는 로그용으로 남긴다"""
+        if left < SAFE_DIST and right < SAFE_DIST:
+            self.dead_why = '양옆 막힘'
+        elif self.flipped and self._side_value(self.side) < SAFE_DIST:
+            self.dead_why = '재탐색 뒤에도 막힘'
+        elif now - self.state_since >= AVOID_TIMEOUT:
+            self.dead_why = f'{AVOID_TIMEOUT:g}초 안에 앞이 열리지 않음'
+        else:
+            return False
+        return True
+
+    # ============================================================
+    # ② 전이 — 상태가 바뀌는 곳은 여기 한 곳뿐
+    # ============================================================
+    def go(self, next_s, event):
+        now = time.monotonic()
+        prev, why = self.state, self._why(event)    # 왜 바뀌었나 (숫자까지)
+        label = rule_label(prev, event)             # 표의 줄 번호 (int) · 표 밖 안전장치면 'safety'
+        rule = f'안전장치 {event}' if label == 'safety' else f'{label}번 줄 {event}'
+        self.get_logger().info(f'[전이] {prev} → {next_s} | {rule} | {why}')
+        if prev in self.leave:
+            self.leave[prev](now)               # 나갈 때 한 번만 하는 일
+        self.state, self.state_since = next_s, now
+        self.history.append((now - self.start, next_s))
+        self.last_tag = None                    # 다음 상태의 첫 줄을 바로 찍음
+        if next_s in self.enter:
+            self.enter[next_s]()                # 들어갈 때 한 번만 하는 일
+        # 상태도 창용 한 줄: 시각 | 전이 | 표의 줄 번호(안전장치면 safety) + 사건 | 이유
+        self.transition_pub.publish(String(
+            data=f'{now - self.start:.1f} | {prev} → {next_s} | {label} {event} | {why}'))
+        self.state_pub.publish(String(data=next_s))
+
+    def _px4_mode(self):
+        """지금 PX4 비행 모드 이름 — 'Land' · 'Offboard' … (이름표에 없으면 'nav_state 번호')"""
+        nav = self.vehicle_status.nav_state
+        return NAV_NAMES.get(nav, f'nav_state {nav}')
+
+    def _why(self, event):
+        """전이 줄 뒷부분 — 로그만 봐도 숫자로 검산할 수 있게
+           (12주차에서 물려받은 글 중 드라이 런 가정 줄과 표 밖 안전장치 둘(px4_takeover · dead_end)의 이유는
+            전이 줄 폭 72 를 넘는다 — 슬라이드에 싣지 않는 줄이라 12주차와 같은 글로 둔다)"""
+        p = self.position
+        s = self.sec
+        if event == 'ready':
+            return 'Offboard + Arm 확인' if self.fly else '스캔 확인 → Offboard + Arm 으로 가정 (드라이 런)'
+        if event == 'airborne':
+            return f'상대 고도 {-p.z:.2f} m' if self.fly else '이륙한 것으로 가정 (드라이 런)'
+        if event == 'landed':
+            return '착지 감지' if self.fly else '착지한 것으로 가정 (드라이 런)'
+        if event == 'px4_takeover':
+            if self.is_offboard:                # 모드는 Offboard 인데 Arm 이 풀림 (disarm · kill)
+                return f'Arm 이 풀린 채 {TAKEOVER_TIME:g}초 (PX4 모드: Offboard) → 다시 요청하지 않음'
+            return f'Offboard 가 아닌 채 {TAKEOVER_TIME:g}초 (PX4 모드: {self._px4_mode()}) → 다시 요청하지 않음'
+        if event == 'sensor_bad':
+            if self.neg > 0 and self.sec:
+                return f'-inf {self.neg}칸 (너무 가까움)'
+            return f'유효한 스캔 {SCAN_TIMEOUT:g}초 없음'
+        if event == 'sensor_ok':
+            return f'유효한 스캔 {RECOVER_TIME:.1f}초 이어짐'
+        if event == 'hold_timeout':
+            return f'{self.hold_timeout:g}초 안에 복구되지 않음'
+        if event == 'dead_end':
+            return f'{self.dead_why} — {sectors_text(s.get("front"), s.get("left"), s.get("right"))}'
+        if event == 'arrived':
+            return f'동 {signed(p.y)} m (목표 {self.goal_east:.1f})'
+        if event == 'aligned':                  # 오차는 내림으로 찍는다 — '0.0498 < 0.05' 가 '0.05 < 0.05' 로 보이지 않게
+            return f'정렬 오차 {floor2(self.err):.2f} < {ALIGN_TOL:.2f}'
+        if event == 'marker_lost':
+            return self.lost_why                # '마커 오차 0.5초 없음' 또는 '하강 정체 5.0초'
+        if event == 'descended':
+            return f'상대 고도 {-p.z:.2f} m ≤ {LAND_ALT:.1f} m'
+        if event == 'align_timeout':
+            return f'{self.align_timeout:g}초 안에 정렬되지 않음'
+        front = self._sec_value('front')
+        if event == 'front_blocked':
+            if front < STOP_DIST:
+                return f'앞 {floor2(front):.2f} m < {STOP_DIST:.1f} m'
+            return f'앞쪽 ±{NEAR_DEG:g}° {self._sec_value("near"):.2f} m < 안전 거리 {SAFE_DIST:.1f} m'
+        if event == 'front_clear':
+            return f'앞 {dist_m(s.get("front"))} ≥ 해제 {CLEAR_DIST:.1f} m'
+        return event
+
+    # ── 들어갈 때 · 나갈 때 한 번 하는 일 ────────────────────────
+    def _enter_takeoff(self):
+        self.takeoff_xy = self._here()          # 지금 자리에서 이륙 (0, 0 으로 쓰면 다시 켰을 때 원점으로 날아간다)
+
+    def _enter_avoid(self):
+        left, right = self._sec_value('left'), self._sec_value('right')
+        self.side = -1 if left > right + TIE_BAND else 1   # 넓은 쪽. 비슷하면 오른쪽 (9주차 재탐색 방향)
+        self.flipped = False
+        s = self.sec
+        rule = ' → 비슷하면 오른쪽' if self.side > 0 and not right > left + TIE_BAND else ''
+        self.get_logger().info(f'[AVOID] {side_name(self.side)} 선택 '
+                               f'(왼쪽 {dist_m(s.get("left"))} · 오른쪽 {dist_m(s.get("right"))}{rule})')
+
+    def _enter_hold(self):
+        self.last_vx = self.last_vy = 0.0       # 속도는 가속도 제한 없이 바로 0
+
+    def _enter_align(self):
+        self.aligned_since = None               # 정렬 유지 1.0초를 처음부터 센다 (하강 정체로 돌아와도)
+
+    def _leave_align(self, now):
+        self.align_total += now - self.state_since   # ALIGN 에 머문 시간을 합에 더함 (align_timeout 은 합으로 판정)
+
+    def _enter_descend(self):
+        self.stall_alt, self.stall_at = -self.position.z, time.monotonic()   # 하강 정체 기준 = 들어온 고도 · 시각
+
+    def _enter_land(self):
+        self.land_at = time.monotonic()
+        if self.fly:
+            self.land()                         # PX4 착륙 모드로 (한 번. 안 넘어가면 _do_land 가 다시 요청)
+
+    def _enter_done(self):
+        record = ' | '.join(f'{t:.1f} {name}' for t, name in self.history)
+        self.get_logger().info(f'[미션 기록] {record}')
+        self.heartbeat_timer.cancel()           # Offboard 신호도 중단 = 명령 완전 중단 (조종권 이양)
+        if self.fly and not self.is_landed:     # 공중에서 안전장치 px4_takeover 로 옴 (사람 · PX4 가 모드를 바꿈)
+            self.get_logger().warn(f'PX4 가 조종 중 (PX4 모드: {self._px4_mode()}) — 이 노드는 명령 중단 (조종권 이양). '
+                                   '착지 확인 뒤 Ctrl+C (공중에 멈춰 있으면 pxh> commander land)')
+        else:
+            self.get_logger().info('미션 끝 — Ctrl+C 로 노드를 끄세요')
+
+    # ============================================================
+    # ③ 상태별 동작 — 매 틱 명령 1번 (LAND · DONE 은 명령 없음)
+    # ============================================================
+    def _do_idle(self):
+        now = time.monotonic()
+        if self.target_slot is None:            # 받을 수 없는 칸 번호 → 이륙하지 않음 (요청 · 명령 없음. 다시 실행 안내는 시작 때 error 줄)
+            self.get_logger().warn(f'[IDLE] 목표 칸 {self.slot_raw} → 받을 수 없는 값 (0~{SLOT_MAX} 정수) — 이륙하지 않음',
+                                   throttle_duration_sec=5.0)
+            return
+        if not self.fly:                        # 드라이 런: 연결 확인은 스캔 하나 (12주차와 같음)
+            if not self._scan_live(now):
+                self.get_logger().warn('[IDLE] 스캔 대기 — 모의 스캔을 발행하세요 (ros2 topic pub … /lidar/scan …)',
+                                       throttle_duration_sec=2.0)
+            return
+        x, y = self._here()
+        self.send_position(x, y, -TARGET_ALT)
+        self.idle_ticks += 1
+        missing = self._missing_links(now)
+        self._report_links(missing)
+        # heartbeat 1초 뒤부터 1초마다. 연결 확인 셋이 모두 되어야 이륙 (눈을 감고 뜨지 않게)
+        if not missing and self.position is not None and self.idle_ticks % 10 == 0:
+            self.set_offboard_mode()
+            self.arm()
+
+    def _do_takeoff(self):
+        if self.fly:
+            self.send_position(self.takeoff_xy[0], self.takeoff_xy[1], -TARGET_ALT)
+
+    def _do_cruise(self):
+        front, left, right = self._front_left_right()
+        vx_t = self.speed_limit(front)          # 전진 (거리 비례 감속)
+        vy_t = self.return_vy(left, right)      # 코스 복귀
+        vx, vy, note = self._send(vx_t, vy_t)
+        s = self.sec
+        back = ' (코스 복귀)' if abs(vy_t) > 1e-9 else ''
+        self._report('CRUISE', note, f'[CRUISE] {self._where()}{sectors_text(s.get("front"), s.get("left"), s.get("right"))}'
+                                     f' | vx {vx:+.2f} · vy {vy:+.2f} m/s{back}')
+
+    def _do_avoid(self):
+        chosen, other = self._side_value(self.side), self._side_value(-self.side)
+        if chosen < SAFE_DIST <= other and not self.flipped:   # 고른 쪽이 막힘 → 반대쪽으로 한 번 재탐색
+            self.flipped, self.side = True, -self.side
+            self.get_logger().warn(f'[재탐색] {side_name(-self.side)} {chosen:.2f} m < 안전 거리 {SAFE_DIST:.1f} m '
+                                   f'→ {side_name(self.side)} (한 번만)')
+        vx, vy, note = self._send(0.0, self.side * V_SIDE)
+        self._report('AVOID', note, f'[AVOID] {side_name(self.side)} | 앞 {dist_m(self.sec.get("front"))} '
+                                    f'(해제 {CLEAR_DIST:.1f}) | vy {vy:+.2f} m/s{self._north()}')
+
+    def _do_hold(self):
+        if self.fly:
+            self.last_vx = self.last_vy = 0.0
+            self.send_velocity_body(0.0, 0.0, self._hold_vz(), 0.0)
+        now = time.monotonic()
+        scan = f'스캔 복구 {now - self.good_since:.1f} / {RECOVER_TIME:.1f}초' if self.sec and self.neg == 0 else '스캔 없음'
+        self._report('HOLD', None, f'[HOLD] 대기 {now - self.state_since:.1f} / {self.hold_timeout:g}초 | {scan} | 수평 정지 · 고도 유지')
+
+    def _do_align(self):
+        now = time.monotonic()
+        waited = f'{self._align_time(now):.1f} / {self.align_timeout:g}초'
+        if not self._marker_seen(now):          # 마커 오차 없음 → 수평 정지 · 수직 0 (들어온 고도 유지)
+            if self.fly:
+                self.send_velocity_body(0.0, 0.0, 0.0, 0.0)
+            # '안 옴' 의 뜻 셋을 가름: 영상이 끊김(브리지) / 마커 인식 노드가 꺼짐 / 목표 ID 가 화면에 없음
+            if self.info_at is None or now - self.info_at > INFO_TIMEOUT:
+                why = '카메라 정보 없음 → 터미널 3'
+            elif self.count_publishers(ERROR_TOPIC) < 1:
+                why = '마커 인식 없음 (발행자 0) → 터미널 4'
+            else:                                        # 둘 다 있음 → 목표 ID 마커가 화면에 없음 (없거나 번호가 다름)
+                why = f'마커 오차 없음 (기대 ID {self.target_slot})'
+            self._report('ALIGN 대기', None, f'[ALIGN] 마커 대기 {waited} | {why}')
+            return
+        vx, vy, vz, err = self._align_step(0.0)          # 수직 0 = 들어온 고도 유지 (12번 줄로 와도 2 m 로 오르지 않음)
+        vx, vy, note = self._fence(vx, vy)
+        if self.fly:
+            self.send_velocity_body(vx, vy, vz, 0.0)
+        mark, tag = ('<', 'ALIGN 유지') if err < ALIGN_TOL else ('≥', 'ALIGN 정렬')   # 유지 = 1.0초 세는 중
+        vx_t, vy_t = round(vx, 2) + 0.0, round(vy, 2) + 0.0   # '-0.00' 대신 '+0.00' 으로 찍히게
+        self._report(tag, note, f'[ALIGN] 정렬 {waited} | 오차 {floor2(err):.2f} {mark} {ALIGN_TOL:.2f} | '
+                                f'vx {vx_t:+.2f} · vy {vy_t:+.2f} m/s')
+
+    def _do_descend(self):
+        if not self._marker_seen(time.monotonic()):      # (이 틱에는 12번 줄로 이미 ALIGN — 대비용) 멈춤
+            if self.fly:
+                self.send_velocity_body(0.0, 0.0, 0.0, 0.0)
+            return
+        alt = -self.position.z
+        speed = DESCEND_SPEED if alt > LAND_ALT else 0.0  # 1 m 에서는 내려가지 않고 정렬만 다시 확인 (6주차와 같음)
+        vx, vy, vz, err = self._align_step(speed)
+        vx, vy, note = self._fence(vx, vy)
+        if self.fly:
+            self.send_velocity_body(vx, vy, vz, 0.0)
+        self._report('DESCEND', note, f'[DESCEND] 상대 고도 {alt:.2f} m | 정렬 오차 {floor2(err):.2f} | 하강 {vz:.2f} m/s')
+
+    def _do_land(self):
+        if not self.fly or not self.is_offboard:   # PX4 착륙 모드 — 내려가는 일은 PX4 가 한다
+            return
+        # 아직 Offboard 면 제자리에서 기다리며 다시 요청 (착륙 요청이 거절되거나 상태 메시지가 늦을 때)
+        # 속도 0 — 고도 유지 식(_hold_vz)은 2 m 로 돌아가려 해 13번 줄(고도 1 m)로 오면 상승 명령이 됨 (6주차와 같음)
+        self.send_velocity_body(0.0, 0.0, 0.0, 0.0)
+        now = time.monotonic()
+        if now - self.land_at >= LAND_RETRY:
+            self.land_at = now
+            self.land()
+
+    def _do_done(self):
+        pass
+
+    # ── 11주차 판단 두 가지 ──────────────────────────────────────
+    # [복붙 영역] 속도 제한: K_SLOW × (앞 거리 − 정지 판단 거리) → 포화 (최소 CREEP, 최대 cruise_speed)
+    def speed_limit(self, front):
+        if self.cruise_speed <= 0.0:
+            return 0.0
+        if math.isinf(front):
+            return self.cruise_speed
+        return min(self.cruise_speed, max(CREEP, K_SLOW * (front - STOP_DIST)))
+
+    # [복붙 영역] 코스 복귀: 돌아갈 쪽의 옆과 뒤 대각선이 해제 거리 넘게 비면 코스(북 0)로
+    def return_vy(self, left, right):
+        p = self.position if self.fly else None
+        if p is None or self.cruise_speed <= 0.0:
+            return 0.0
+        off = p.x                               # NED x = 북쪽 [m]
+        s = math.sin(self.current_yaw)          # 기수 동쪽이면 1 (오른쪽 이동 = 남쪽)
+        if abs(off) < RET_DONE or abs(s) < 0.5:
+            return 0.0
+        direction = 1 if off * s > 0 else -1    # +1 = 오른쪽으로 가야 코스에 가까워짐
+        side_val = right if direction > 0 else left
+        rear = self._sec_value('rear_r' if direction > 0 else 'rear_l')
+        if min(side_val, rear) < CLEAR_DIST:
+            return 0.0
+        return direction * min(K_RET * abs(off), V_SIDE)
+
+    # ── 6주차 정밀착륙 계산 ──────────────────────────────────────
+    # [복붙 영역] 마커 오차 → 고도 보정 오차 (6주차 precision_land_base._align_step 의 앞부분과 같은 식)
+    def _marker_err(self):
+        """반환값 = (ex, ey, err): 화면 반폭 = 1 로 나누고 고도 보정. err = 둘 중 큰 쪽
+           고도 보정: 낮을수록 같은 거리가 화면에서 크게 보이므로 (고도 / 4 m) 를 곱함 — 2 m 에서 0.5, 1 m 에서 0.25"""
+        altitude = max(-self.position.z, LAND_ALT)
+        scale = min(altitude / ALIGN_ALT, 1.0)
+        half = self.image_w / 2.0
+        ex = self.x_error / half * scale        # 마커가 화면 오른쪽이면 +
+        ey = self.y_error / half * scale        # 마커가 화면 아래면 +
+        return ex, ey, max(abs(ex), abs(ey))
+
+    # [복붙 영역] 정렬 명령 (6주차 _align_step 과 같은 식 — 명령은 보내지 않고 돌려준다: 지오펜스를 거친 뒤 보냄)
+    def _align_step(self, descend_speed=0.0):
+        """카메라 오차 → 몸체 속도 (비례 제어, P 제어). descend_speed = 정렬이 완벽할 때의 하강 속도 (NED: + = 아래)
+           반환값 = (앞 vx, 오른쪽 vy, 아래 vz [m/s], 고도 보정 오차)
+           영상 위쪽 = 기체 앞쪽 · 영상 오른쪽 = 기체 오른쪽 (아래 카메라 — 6주차 기체와 같은 자리 · 방향)"""
+        ex, ey, err = self._marker_err()
+        vx_body = clamp(-KP * ey, MAX_SPEED)    # 앞(+) / 뒤(-) — 마커가 화면 위쪽(ey < 0)이면 앞으로
+        vy_body = clamp(+KP * ex, MAX_SPEED)    # 오른쪽(+) / 왼쪽(-)
+        # 하강 속도 = 최대 속도 × 정렬이 확실한 정도 (1 = 완벽, 0 = 오차가 STOP_ERR 10 % 이상 → 하강 멈춤)
+        confidence = max(0.0, 1.0 - err / STOP_ERR)
+        vz = descend_speed * confidence         # DESCEND 에서: 오차 0 → 0.3, 0.05 → 0.15, 0.10 이상 → 0 m/s
+        return vx_body, vy_body, vz, err
+
+    def _fence(self, vx, vy):
+        """[복붙 영역] 정렬 · 하강의 지오펜스 (정렬 이동 한계): 목표 지점에서 반경 ALIGN_RADIUS(1.5 m) 밖으로
+           나가는 성분만 0 — 안쪽 · 옆으로 가는 성분은 그대로. 반환값 = (vx, vy, 안내 또는 None)"""
+        p = self.position
+        dn, de = p.x - GOAL_NORTH, p.y - self.goal_east  # 목표 지점 → 기체 (NED: 북, 동) [m]
+        d = math.hypot(dn, de)
+        if d < ALIGN_RADIUS:
+            return vx, vy, None
+        c, s = math.cos(self.current_yaw), math.sin(self.current_yaw)
+        vn, ve = vx * c - vy * s, vx * s + vy * c       # 몸체 → NED (send_velocity_body 와 같은 식)
+        out = (vn * dn + ve * de) / d                    # 바깥쪽으로 나가는 속도 [m/s]
+        if out <= 0.0:
+            return vx, vy, None
+        vn, ve = vn - out * dn / d, ve - out * de / d    # 바깥쪽 성분만 뺌
+        vx, vy = vn * c + ve * s, -vn * s + ve * c       # NED → 몸체
+        return vx + 0.0, vy + 0.0, ('지오펜스', f'[지오펜스] 목표 지점에서 {d:.2f} m ≥ {ALIGN_RADIUS:.1f} m → 바깥쪽 이동 정지')
+
+    # ============================================================
+    # 명령 보내기 (순항 · 회피) — 가속도 제한 → 안전 필터 → 명령 1번 (드라이 런은 값만 돌려준다)
+    # ============================================================
+    def _send(self, vx_t, vy_t):
+        vx, vy = self._ramp(vx_t, vy_t) if self.fly else (vx_t, vy_t)
+        note = None                             # 안전 필터가 바꿨으면 (태그, 글자)
+        if not self.sec:                        # 스캔 끊김 (TAKEOFF → CRUISE 직후 한 틱 — 다음 틱에 HOLD 로): 측정 없음 = 막힘
+            vx, vy = 0.0, 0.0
+            note = ('스캔 없음', '[스캔 없음] 전진 · 좌우 이동 막힘')
+        else:
+            near = self._sec_value('near')
+            if vx > 0.0 and near < SAFE_DIST:   # 근접: 전진만 0 (좌우 이동은 허용 → 빠져나올 수 있게)
+                vx = 0.0
+                note = ('근접', f'[근접] 앞쪽 {near:.2f} m < 안전 거리 {SAFE_DIST:.1f} m → 전진 정지')
+            if abs(vy) > 1e-9:                  # 옆 안전 거리: 실제로 가는 쪽 옆 섹터 (vy 음수 = 왼쪽)
+                direction = -1 if vy < 0 else 1
+                side_val = self._side_value(direction)
+                if side_val < SAFE_DIST:
+                    vy = 0.0
+                    note = ('안전', f'[안전] {side_name(direction)} {side_val:.2f} m < 안전 거리 {SAFE_DIST:.1f} m → 좌우 이동 정지')
+        p = self.position if self.fly else None
+        if p is not None:                       # 지오펜스: 북 ±3 m 바깥쪽으로는 좌우 이동하지 않음
+            n_dot = -vy * math.sin(self.current_yaw)   # 기수 동쪽: 왼쪽 = 북 +
+            if (p.x > LAT_LIMIT and n_dot > 0.0) or (p.x < -LAT_LIMIT and n_dot < 0.0):
+                vy = 0.0
+                note = ('지오펜스', f'[지오펜스] 북 {signed(p.x)} m → 바깥쪽 이동 정지')
+        vx = max(vx, 0.0)                       # 사각지대: 뒤 90° 는 측정하지 않으므로 후진 없음 (순항 · 회피)
+        if self.fly:
+            self.last_vx, self.last_vy = vx, vy
+            # PX4Base: 몸체 속도 → 기수 방향으로 NED 로 돌려 보냄 (6주차). 요 각속도 0 → 기수 그대로
+            self.send_velocity_body(vx, vy, self._hold_vz(), 0.0)
+        return vx + 0.0, vy + 0.0, note         # + 0.0: '-0.00' 대신 '+0.00' 으로 찍히게
+
+    def _ramp(self, vx_t, vy_t):
+        """[복붙 영역] 가속도 제한 — 두 축 모두 한 틱에 STEP 까지만 (0.5 m/s², 11주차와 같음)"""
+        return (self.last_vx + clamp(vx_t - self.last_vx, STEP),
+                self.last_vy + clamp(vy_t - self.last_vy, STEP))
+
+    def _hold_vz(self):
+        """[복붙 영역] 고도 유지 — 9주차와 같은 −z 한 줄 (NED: + = 하강), 최대 고도 제한 5 m
+           (순항 · 회피 · HOLD 에서만 — 목표가 2 m 고정이라 정렬 · 하강 · 착륙에는 쓰지 않는다)"""
+        if self.position is None:
+            return 0.0
+        h = -self.position.z                    # 상대 고도 [m]
+        vz = clamp(KZ * (h - TARGET_ALT), MAX_VZ)
+        if h > MAX_REL_ALT and vz < 0.0:
+            vz = 0.0
+        return vz
+
+    # ============================================================
+    # 콜백 — 받은 값을 저장
+    # ============================================================
+    def _scan_callback(self, msg: LaserScan):
+        n = len(msg.ranges)
+        ok = (n > 0 and math.isfinite(msg.range_min) and math.isfinite(msg.range_max)
+              and msg.range_max > msg.range_min)
+        if n > 1:                               # 여러 칸이면 각도 정보도 있어야 칸 번호 ↔ 각도를 계산할 수 있다
+            ok = ok and math.isfinite(msg.angle_min) and msg.angle_increment > 0.0
+        if not ok:
+            # 버린 스캔은 '받은 시각'을 갱신하지 않는다 → 계속 버려지면 0.5초 뒤 sensor_bad
+            if not self.bad_logged:
+                self.bad_logged = True
+                self.get_logger().warn('스캔 칸 정보가 이상해 버림 — 모의 스캔이면 '
+                                       'angle_min·angle_increment·range_min·range_max 를 모두 넣기')
+            return
+        now = time.monotonic()
+        self.neg = sum(1 for r in msg.ranges if r == -math.inf)
+        if self.neg > 0 or self.scan_at is None or now - self.scan_at > SCAN_TIMEOUT:
+            self.good_since = now               # 끊겼거나 너무 가까움 → 복구 시간을 처음부터 셈
+        self.scan, self.scan_at = msg, now
+
+    def _position_callback(self, msg: VehicleLocalPosition):
+        self.position = msg
+
+    def _error_callback(self, msg: Float32MultiArray):
+        if len(msg.data) < 2:                   # 형식이 다른 메시지는 무시 (6주차와 같음)
+            return
+        self.x_error, self.y_error = float(msg.data[0]), float(msg.data[1])
+        self.last_seen = time.monotonic()
+
+    def _camera_info_callback(self, msg: CameraInfo):
+        if msg.width > 0:
+            self.image_w = msg.width
+            self.info_at = time.monotonic()
+
+    # ============================================================
+    # 도우미
+    # ============================================================
+    def _scan_live(self, now):
+        if self.scan_at is None:
+            return False
+        # 드라이 런은 마지막 모의 스캔을 계속 쓴다 — ranges 를 바꾸려고 발행을 껐다 켜는 동안 끊기기 때문
+        return not self.fly or now - self.scan_at <= SCAN_TIMEOUT
+
+    def _marker_seen(self, now):
+        """최근 LOST_TIMEOUT(0.5초) 안에 마커 오차를 받았으면 마커가 보이는 중 (6주차와 같음. 화면 폭도 알아야 계산)"""
+        return (self.last_seen is not None and now - self.last_seen < LOST_TIMEOUT
+                and self.image_w is not None and self.position is not None)
+
+    def _align_time(self, now):
+        """ALIGN 에 머문 시간의 합 [s] — 지난 ALIGN 들 + 지금 ALIGN 이면 들어온 뒤 시간"""
+        return self.align_total + (now - self.state_since if self.state == ALIGN else 0.0)
+
+    def _missing_links(self, now):
+        """연결 확인 셋 — 빠진 것의 이름 목록 (빈 목록 = 모두 됨)
+           스캔 수신 · 카메라 정보 수신 · 마커 인식 노드 (/sjcu/error 발행자 1 이상 — 마커가 화면에 없으면
+           오차는 오지 않으므로 땅에서는 발행자 수로 확인)"""
+        missing = []
+        if not self._scan_live(now):
+            missing.append('스캔')
+        if self.info_at is None or now - self.info_at > INFO_TIMEOUT:
+            missing.append('카메라 정보')
+        if self.count_publishers(ERROR_TOPIC) < 1:
+            missing.append('마커 인식')
+        return missing
+
+    def _report_links(self, missing):
+        """연결 확인 결과 — 모두 되면 한 번 info, 빠진 것이 있으면 1초 뒤부터 2초마다 빠진 것마다 한 줄 (warn)
+           PX4 위치도 함께 본다: 셋이 되어도 위치가 안 오면(Agent · PX4) 요청하지 않으므로 '완료' 대신 그 줄을 찍는다"""
+        if not missing and self.position is not None:
+            if not self.links_ok:
+                self.links_ok = True
+                self.get_logger().info('[IDLE] 연결 확인 완료 — 스캔 · 카메라 정보 · 마커 인식')
+            return
+        self.links_ok = False
+        if self.idle_ticks % 20 == 10:          # 1초 · 3초 · 5초 … (시작 직후 아직 안 온 것을 오류로 보지 않게)
+            if self.position is None:           # 터미널 순서대로 먼저 (Agent · PX4 가 앞쪽)
+                self.get_logger().warn('[IDLE] 연결 확인 — PX4 위치 없음 → 터미널 2 (Agent) · 1 (PX4) 실행 확인')
+            for name in missing:
+                self.get_logger().warn(f'[IDLE] 연결 확인 — {name} 없음 → 터미널 {LINK_TERMINAL[name]} 실행 확인')
+
+    def _here(self):
+        """지금 수평 위치 (NED x, y) [m]. 위치를 아직 모르면 NaN = 수평은 명령하지 않음"""
+        p = self.position
+        return (math.nan, math.nan) if p is None else (float(p.x), float(p.y))
+
+    def _sectors(self, scan):
+        return {
+            'front':  sector_min(scan, -FRONT_DEG, FRONT_DEG),
+            'left':   sector_min(scan, SIDE_DEG[0], SIDE_DEG[1]),
+            'right':  sector_min(scan, -SIDE_DEG[1], -SIDE_DEG[0]),
+            'near':   sector_min(scan, -NEAR_DEG, NEAR_DEG),
+            'rear_l': sector_min(scan, REAR_DEG[0], REAR_DEG[1]),
+            'rear_r': sector_min(scan, -REAR_DEG[1], -REAR_DEG[0]),
+        }
+
+    def _sec_value(self, key):
+        """섹터 값 — 측정 없음(None)은 0 (막힘)으로 본다"""
+        value = self.sec.get(key)
+        return 0.0 if value is None else value
+
+    def _front_left_right(self):
+        return self._sec_value('front'), self._sec_value('left'), self._sec_value('right')
+
+    def _side_value(self, direction):
+        """방향 부호 → 그쪽 옆 섹터 값 (-1 = 왼쪽, +1 = 오른쪽)"""
+        return self._sec_value('left' if direction < 0 else 'right')
+
+    def _where(self):
+        p = self.position if self.fly else None
+        if p is None:
+            return ''
+        north = f' · 북 {signed(p.x)} m' if abs(p.x) >= RET_DONE else ''
+        return f'동 {signed(p.y)} m{north} | '
+
+    def _north(self):
+        p = self.position if self.fly else None
+        return '' if p is None else f' | 북 {signed(p.x)} m'
+
+    def _report(self, tag, note, text):
+        """안전 필터가 바꿨으면 그 말을, 아니면 상태 줄을 찍는다"""
+        dry = '' if self.fly else '[드라이 런] '
+        if note is not None:
+            self._log(note[0], dry + note[1], warn=True)
+        else:
+            self._log(tag, dry + text)
+
+    def _log(self, tag, text, warn=False):
+        """태그가 바뀌면 바로, 같으면 LOG_PERIOD(1초)마다 한 줄"""
+        now = time.monotonic()
+        if tag == self.last_tag and now - self.last_log_at < LOG_PERIOD:
+            return
+        self.last_tag, self.last_log_at = tag, now
+        # info·warn 을 한 줄에서 번갈아 부르면 rclpy 가 ValueError (같은 호출 자리에서 심각도가 바뀜) → 두 줄로 나눔
+        if warn:
+            self.get_logger().warn(text)
+        else:
+            self.get_logger().info(text)
+
+    # ── [복붙 영역] 파라미터 다시 읽기 — 숫자 검사(bool·nan·inf 거부) + 범위, 밖이면 경고 후 이전 값 ──
+    #    범위 밖 값도 ros2 param set 은 'Set parameter successful' 이라고 답한다 → 결과는 이 노드 로그로 확인
+    def _read_params(self):
+        for name in PARAMS:
+            self._read_param(name)
+        if as_bool(self.get_parameter('fly').value) != self.fly:
+            self.get_logger().warn('fly 는 시작할 때만 읽습니다 — 바꾸려면 노드를 다시 실행 (비행 중이면 pxh> commander land 먼저)',
+                                   throttle_duration_sec=5.0)
+        if repr(self.get_parameter('target_slot').value) != repr(self.slot_raw):   # repr: nan 끼리도 같게 비교
+            self.get_logger().warn('target_slot 은 시작할 때만 읽습니다 — 바꾸려면 노드를 다시 실행 (비행 중이면 pxh> commander land 먼저)',
+                                   throttle_duration_sec=5.0)
+
+    def _read_param(self, name, start=False):
+        default, low, high, text = PARAMS[name]
+        old = getattr(self, name)
+        keep = f'기본값 {default:g} 로 시작' if start else f'이전 값 {old:g} 그대로'
+        try:
+            raw = self.get_parameter(name).value
+            if isinstance(raw, bool):           # true/false 는 숫자가 아님 (float(True) = 1.0 방지)
+                raise TypeError
+            value = float(raw)
+            if not math.isfinite(value):
+                raise ValueError
+        except (TypeError, ValueError):
+            self._param_warn(name, f'{name} 값이 숫자가 아님 — {keep}')
+            return
+        if not low <= value <= high:
+            self._param_warn(name, f'{name} {value:g} 는 범위 밖 ({low:g}~{high:g}) — {keep}')
+            return
+        if value != old:
+            if not start:
+                self.get_logger().info(f'{text} {old:g} → {value:g}')
+            setattr(self, name, value)
+
+    def _param_warn(self, name, text):
+        """파라미터 경고는 이름마다 2초에 한 번"""
+        now = time.monotonic()
+        if now - self.param_warn_at.get(name, -math.inf) >= 2.0:
+            self.param_warn_at[name] = now
+            self.get_logger().warn(text)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = MissionBase()
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        print('사용자 종료 (Ctrl+C)')
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()

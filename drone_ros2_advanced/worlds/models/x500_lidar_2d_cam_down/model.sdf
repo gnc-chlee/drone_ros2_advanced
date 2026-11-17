@@ -10,7 +10,7 @@
 
     <!-- 2) 2D LiDAR: PX4 lidar_2d_v2/model.sdf 4~76행을 옮겨 적음. 자리는 x500_lidar_2d 와 같음 (.12 0 .26)
             이름(link / lidar_2d_v2)을 그대로 두어 토픽의 링크 · 센서 부분이 기본 기체와 같다 (기체 이름만 x500_lidar_2d_cam_down_0).
-            원본과 달라질 수 있는 값은 update_rate 한 줄 (83번째 줄 · PX4 원본은 30 — 10 으로 낮출지는 VM 측정 뒤 확정) -->
+            원본과 다른 값은 update_rate 한 줄 (83번째 줄 · PX4 원본은 30 — 10 Hz 확정, 2026-11-17 교수 VM) -->
     <link name="link">
       <pose>.12 0 .26 0 0 0</pose>
       <inertial>
