@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : face_following_stable_base.py  (13주차 - px4_base 버전)
+# File    : face_following_stable_base.py  (옛 커리큘럼 13주차 - px4_base 버전)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-07-07
 # Version : 1.0.0
@@ -8,7 +8,7 @@
 # Description:
 #   Following 안정화 튜닝 - PX4Base 상속 버전
 #
-#   12주차(base)에 3가지 안정화 추가:
+#   옛 12주차(base, face_following_base.py)에 3가지 안정화 추가:
 #     [안정화 1] 데드존   : 작은 오차 무시 → 덜덜 떨림 제거
 #     [안정화 2] 스무딩   : EMA 필터로 인식 노이즈 완화
 #     [안정화 3] 타임아웃 : 잠깐 놓쳐도 1초는 기다렸다가 호버링
@@ -22,7 +22,7 @@
 #     터미널 1: cd ~/PX4-Autopilot && make px4_sitl gz_x500
 #     터미널 2: MicroXRCEAgent udp4 -p 8888
 #     터미널 3: ros2 run drone_ros2_advanced w08_face_detector
-#     터미널 4: ros2 run drone_ros2_advanced w13_stable_base
+#     터미널 4: python3 -m drone_ros2_advanced.extras.face_following_stable_base   (참고용 — setup.py 에 실행 이름 없음)
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# File    : face_following_stable_raw.py  (13주차 - raw 버전)
+# File    : face_following_stable_raw.py  (옛 커리큘럼 13주차 - raw 버전)
 # Author  : Choonghyun Lee (gnc-chlee)
 # Date    : 2026-07-07
 # Version : 1.0.0
 #
 # Description:
-#   Following 안정화 튜닝 - 12주차 코드에 3가지 안정화 기법 추가
-#   (12주차 raw와 diff로 비교해보세요! 바뀐 곳에 [안정화] 표시)
+#   Following 안정화 튜닝 - 옛 12주차 코드(face_following_raw.py)에 3가지 안정화 기법 추가
+#   (같은 extras/ 폴더의 face_following_raw.py 와 diff로 비교해보세요! 바뀐 곳에 [안정화] 표시)
 #
-#   12주차의 문제점과 해결책:
+#   옛 12주차의 문제점과 해결책:
 #     1. 얼굴이 조금만 움직여도 드론이 반응 → 덜덜 떨림
 #        → [안정화 1] 데드존: 오차가 작으면 무시
 #     2. 얼굴 인식 위치가 프레임마다 튐 (노이즈)
@@ -21,7 +21,7 @@
 #     터미널 1: cd ~/PX4-Autopilot && make px4_sitl gz_x500
 #     터미널 2: MicroXRCEAgent udp4 -p 8888
 #     터미널 3: ros2 run drone_ros2_advanced w08_face_detector
-#     터미널 4: ros2 run drone_ros2_advanced w13_stable_raw
+#     터미널 4: python3 -m drone_ros2_advanced.extras.face_following_stable_raw   (참고용 — setup.py 에 실행 이름 없음)
 #
 # Repository:
 #   https://github.com/gnc-chlee/drone_ros2_advanced
@@ -99,7 +99,7 @@ class FaceFollowingStableRaw(Node):
     def __init__(self):
         super().__init__('face_following_stable_raw')
 
-        # ── Publishers (12주차와 동일) ───────────────────────────
+        # ── Publishers (옛 12주차와 동일) ───────────────────────────
         self.offboard_mode_pub = self.create_publisher(
             OffboardControlMode, '/fmu/in/offboard_control_mode', PX4_QOS)
         self.setpoint_pub = self.create_publisher(
@@ -107,7 +107,7 @@ class FaceFollowingStableRaw(Node):
         self.command_pub = self.create_publisher(
             VehicleCommand, '/fmu/in/vehicle_command', PX4_QOS)
 
-        # ── Subscribers (12주차와 동일) ──────────────────────────
+        # ── Subscribers (옛 12주차와 동일) ──────────────────────────
         self.local_pos_sub = self.create_subscription(
             VehicleLocalPosition, '/fmu/out/vehicle_local_position',
             self._local_pos_callback, PX4_QOS)
@@ -139,7 +139,7 @@ class FaceFollowingStableRaw(Node):
             f'타임아웃: {DETECTION_TIMEOUT}s')
 
     # ============================================================
-    # 콜백 (12주차와 동일)
+    # 콜백 (옛 12주차와 동일)
     # ============================================================
     def _local_pos_callback(self, msg):
         self.local_position = msg
@@ -233,7 +233,7 @@ class FaceFollowingStableRaw(Node):
         )
 
     # ============================================================
-    # [복붙 영역] 퍼블리시 헬퍼 (12주차와 동일)
+    # [복붙 영역] 퍼블리시 헬퍼 (옛 12주차와 동일)
     # ============================================================
     def _publish_heartbeat(self):
         msg = OffboardControlMode()
@@ -254,7 +254,7 @@ class FaceFollowingStableRaw(Node):
         self.setpoint_pub.publish(msg)
 
     def _publish_velocity_body(self, vx_body, vy_body, vz, yaw_rate):
-        """Body frame → NED 변환 후 속도 명령 (12주차와 동일)"""
+        """Body frame → NED 변환 후 속도 명령 (옛 12주차와 동일)"""
         vx_ned = (vx_body * math.cos(self.current_yaw)
                   - vy_body * math.sin(self.current_yaw))
         vy_ned = (vx_body * math.sin(self.current_yaw)

@@ -95,9 +95,10 @@ setup(
             'w12_mission = drone_ros2_advanced.week12.mission_base:main',
             'w12_state_viewer = drone_ros2_advanced.week12.state_viewer:main',
 
-            # ── 13주차: 추종 안정화 (통합 미션 소재) ─────────────
-            'w13_stable_raw = drone_ros2_advanced.week13.face_following_stable_raw:main',
-            'w13_stable_base = drone_ros2_advanced.week13.face_following_stable_base:main',
+            # ── 13주차: 통합 시나리오 설계 · 통합 미션 ──────────────
+            #    수업용: w13_fsm_sim (23강, PX4 없음 — 통합 미션 표 14줄) / 24강 실행 파일은 VM 확인 뒤 추가
+            #    (옛 13주차 얼굴 추종 안정화 코드는 extras/ 로 옮김 — 실행 이름 없음)
+            'w13_fsm_sim = drone_ros2_advanced.week13.fsm_sim:main',
 
             # ── 14주차: 심화 (YOLO) ──────────────────────────────
             'w14_yolo = drone_ros2_advanced.week14.yolo_detector:main',

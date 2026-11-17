@@ -120,7 +120,7 @@ ros2 run drone_ros2_advanced w03_mission_raw --ros-args -p waypoint_file:=$(ros2
 | 10주차 | 거리 센서 개념과 ROS2 토픽 연동 / LiDAR 고도 데이터 활용 실습 | `w10_lidar_bridge` + `w10_range_viewer`, `worlds/lidar_world.sdf` (17강: 하방 LiDAR 거리를 두 경로 — 브리지 원시값 `/lidar/down` · PX4 추정값 `dist_bottom` — 로 읽고 대지 고도 확인) / `w10_terrain_follow` (18강: 드라이 런 → 제자리 고도 유지 → 비행 중에 전진 속도 켜기로 상자 넘기 = 지형 추종, terrain following) |
 | 11주차 | 장애물 감지 원리와 회피 전략 / 회피 비행 노드 실습 | `w11_scan_bridge` + `w11_scan_viewer`, `worlds/obstacle_world.sdf` (19강: 2D LiDAR 스캔 1080칸 → 앞·왼쪽·오른쪽 섹터 최근접 거리, 정지 거리) / `w11_avoid` (20강: 드라이 런 → 제자리 호버 → 비행 중에 전진 켜기로 기둥 앞 정지 → 넓은 쪽 좌우 이동 → 코스 복귀 → 도착 = 반응형 회피, reactive avoidance) |
 | 12주차 | 상태머신 기반 미션 설계 / 모드 전환 로직 | `w12_fsm_sim` (21강: 전이 조건표 시험 · 결함 주입) / `w12_mission` + `w12_state_viewer` (+ 11주차 `w11_scan_bridge`·`obstacle_world`) (22강: 켜면 이륙부터 착륙까지 → 브리지 끄기 → PX4 모드 변경) |
-| 13주차 | 통합 시나리오 설계 / 통합 미션 구현·디버깅 | `w13_stable_raw` / `w13_stable_base` |
+| 13주차 | 통합 시나리오 설계 / 통합 미션 구현·디버깅 | `w13_fsm_sim` (23강: 통합 미션 전이 조건표 14줄 시험 · 결함 주입 `del 11`) / 24강 실행 파일(`w13_bridge` · `w13_mission` · `w13_state_viewer`)은 VM 확인 뒤 추가 |
 | 14주차 | 통합 미션 시연 / 심화 주제 소개 (RL, YOLO) | `w14_yolo`, `w14_haar_vs_yolo` |
 | 15주차 | **기말고사** | - |
 
@@ -802,6 +802,100 @@ PX4 가 조종 중 (PX4 모드: Land) — 이 노드는 명령 중단 (조종권
 | 상태도 창 아래가 `front (+-30 deg): no scan` | 브리지(3번) 종료됨 → 브리지 재실행 |
 | `ros2 param set` 이 노드를 못 찾음 / 값이 안 먹음 | 노드 이름 오타 / 범위 밖 값 → `ros2 node list` 에서 `/mission_base`, 노드 로그의 경고 확인 |
 
+## 13주차 통합 시나리오 설계 · 통합 미션 (23·24강)
+12주차 미션(이륙 → 순항 → 기둥 회피 → 착륙)에 **정밀착륙**(마커 정렬 → 하강)을 더한 통합 미션 「주차장 지정 칸 착륙」입니다 — 같은 코스를 날아온 드론이 목표 칸의 마커 위에 착륙합니다. 23강은 PX4 없이 시뮬레이터로 **전이 조건표 14줄**을 시험합니다(터미널 하나).
+
+**볼 곳**: 코드는 읽지 않아도 됩니다. 아래 **전이 조건표 14줄**만 봅니다. 표는 [`week13/mission_table.py`](drone_ros2_advanced/drone_ros2_advanced/week13/mission_table.py) 한 파일에 있고 시뮬레이터와 24강 미션 노드가 같이 씁니다.
+
+- 상태 9개 = 12주차 7개 + `ALIGN`(정렬: 목표 칸 마커 바로 위로) · `DESCEND`(하강: 정렬을 유지하며 고도 1 m 까지)
+- 사건 13개 = 12주차 9개 + 정밀착륙 4개: `aligned`(마커 정렬 완료) · `marker_lost`(마커 상실) · `descended`(하강 완료) · `align_timeout`(ALIGN 30초)
+
+**전이 조건표 14줄** — 12주차 표와 다른 곳: 5번 줄의 다음 상태(`LAND` → `ALIGN`) · 새 줄 11~14. 해당 줄 없음 → 현재 상태 유지
+
+| 줄 | 현재 상태 | 사건 (뜻) | 다음 상태 |
+|----|------|------|------|
+| 1 | `IDLE` | `ready` (Offboard + Arm 완료) | `TAKEOFF` |
+| 2 | `TAKEOFF` | `airborne` (이륙 고도 도달) | `CRUISE` |
+| 3 | `CRUISE` | `front_blocked` (앞 1.5 m 미만) | `AVOID` |
+| 4 | `AVOID` | `front_clear` (앞 2.0 m 이상) | `CRUISE` |
+| **5** | `CRUISE` | `arrived` (목표 도착) | **`ALIGN`** (12주차는 `LAND`) |
+| 6 | `LAND` | `landed` (착지) | `DONE` |
+| 7 | `CRUISE` | `sensor_bad` (센서 신호 끊김) | `HOLD` |
+| 8 | `AVOID` | `sensor_bad` (센서 신호 끊김) | `HOLD` |
+| 9 | `HOLD` | `hold_timeout` (HOLD 20초) | `LAND` |
+| 10 | `HOLD` | `sensor_ok` (신호 1초 이어짐) | `CRUISE` |
+| **11** | `ALIGN` | `aligned` (마커 정렬 완료) | `DESCEND` |
+| **12** | `DESCEND` | `marker_lost` (마커 상실) | `ALIGN` |
+| **13** | `DESCEND` | `descended` (하강 완료) | `LAND` |
+| **14** | `ALIGN` | `align_timeout` (ALIGN 30초) | `LAND` |
+
+- 1~6 = 정상 미션 · 7~10 = 페일세이프 (12주차와 같음) · 11~14 = 정밀착륙(통합 미션에서 더한 줄): 정렬 → 하강 → 착륙, 하강 중 마커를 놓치면 정렬로(12번), 정렬이 시간 안에 안 되면 그 자리 착륙(14번)
+- `ALIGN` 은 `HOLD` 와 같은 모양의 대기 상태입니다 — 나가는 줄이 둘: 잘 풀릴 때(11번 / 10번)와 타임아웃(14번 / 9번). 새 대기 상태를 더하면 타임아웃 줄도 함께
+- `ALIGN` · `DESCEND` 에는 스캔 줄(`sensor_bad`)이 없습니다 — 정렬 · 하강은 아래 카메라만 씁니다
+- 표 밖 안전장치 2개는 12주차와 같습니다 (`px4_takeover` 는 정렬 · 하강 중에도 — 23강 표 · 시뮬레이터에는 없음)
+
+### 0) 준비 (코드 받기)
+```bash
+cd ~/ros2_ws/src/drone_ros2_advanced && git fetch origin && git reset --hard origin/main
+cd ~/ros2_ws && rm -rf build/drone_ros2_advanced install/drone_ros2_advanced     # 옛 실행 파일 지우기
+cd ~/ros2_ws && colcon build --packages-select drone_ros2_advanced && source install/setup.bash
+ros2 pkg executables drone_ros2_advanced | grep w13     # 23강: w13_fsm_sim 1개 (24강 실행 파일 3개는 VM 확인 뒤 추가)
+```
+- 둘째 줄 = 옛 13주차 실행 파일(`w13_stable_raw` · `w13_stable_base`) 지우기 — 빌드는 없어진 실행 이름의 파일을 지우지 않습니다. 둘째 줄 없이 빌드하면 두 이름이 함께 보입니다(옛 얼굴 추종 코드 — `extras/` 로 옮김, 쓰지 않음)
+- 첫 줄은 [매주 실습 전에](#매주-실습-전에--최신-코드-받기) 와 같습니다 — `git reset` 은 내가 고친 제공 파일을 원래대로 돌립니다(새로 만든 파일은 남음). 고친 파일은 먼저 다른 곳에 복사
+
+### 1) 23강 — 통합 미션 표 시험 (터미널 하나, PX4·Gazebo 없음)
+```bash
+ros2 run drone_ros2_advanced w13_fsm_sim
+```
+사용법은 12주차 21강 시뮬레이터와 같습니다 — 사건(일어난 일)의 **이름**을 한 줄에 하나씩 입력하면 표에 따라 상태가 바뀝니다. 명령: `t` 표 · `del N` 줄 삭제 · `r` 초기화(표·상태) · `v` 상태도 창 끄기·켜기 · `h` 도움말 · `q` 종료. 표 파일은 수정하지 않습니다.
+
+**상태도 창**: `ALIGN` · `DESCEND` 가 `CRUISE` · `LAND` 위에 있습니다 — 5번 화살표가 `CRUISE` 에서 위(`ALIGN`)로. 현재 상태 = 빨강, 방금 쓰인 줄의 화살표 = 빨강, 화살표 옆 숫자 = 표의 줄 번호. 입력은 **터미널에** 합니다(창이 앞에 오면 터미널을 한 번 클릭)
+
+| 시나리오 | 입력 (한 줄에 하나씩) | 쓰인 줄 | 결과 |
+|------|------|------|------|
+| 정상 | `ready` `airborne` `front_blocked` `front_clear` `arrived` `aligned` `descended` `landed` | 1 → 2 → 3 → 4 → 5 → 11 → 13 → 6 | `… → CRUISE → ALIGN → DESCEND → LAND → DONE` |
+| 마커 미검출 | `r` 뒤 `ready` `airborne` `arrived` `align_timeout` `landed` | 1 → 2 → 5 → 14 → 6 | `CRUISE → ALIGN → LAND → DONE` (그 자리 착륙) |
+| 하강 중 마커 상실 | `r` 뒤 `ready` `airborne` `arrived` `aligned` `marker_lost` `aligned` `descended` `landed` | 1 → 2 → 5 → 11 → 12 → 11 → 13 → 6 | `ALIGN → DESCEND → ALIGN → DESCEND → LAND → DONE` |
+
+```
+[CRUISE] > arrived
+  사건 arrived → 5번 줄 → ALIGN
+  (ALIGN 에서 표에 있는 사건: aligned · align_timeout)
+[ALIGN] > aligned
+  사건 aligned → 11번 줄 → DESCEND
+  (DESCEND 에서 표에 있는 사건: marker_lost · descended)
+[DESCEND] > descended
+  사건 descended → 13번 줄 → LAND
+  (LAND 에서 표에 있는 사건: landed)
+[LAND] > landed
+  사건 landed → 6번 줄 → DONE
+  미션 끝: IDLE → TAKEOFF → CRUISE → AVOID → CRUISE → ALIGN → DESCEND → LAND → DONE
+  (끝 — r 로 초기화)
+```
+
+**결함 주입 (fault injection)** — `r` → `del 11` (`ALIGN` → `DESCEND` 줄 삭제) → 표 점검이 자동으로 실행됩니다. **도달할 수 없는 상태 (unreachable state)** = `IDLE` 에서 어떤 사건 순서로도 갈 수 없는 상태 — 여기서는 `DESCEND`. 창에서는 화살표 11 이 사라지고 `DESCEND` 에 빨간 점선
+- 정상과 같은 입력 `ready` `airborne` `arrived` `aligned` → `해당 줄 없음 → ALIGN 유지` → `align_timeout` → 14번 줄 → `LAND`. 마커 위 착륙(요구사항)이 빠집니다
+```
+[IDLE] > del 11
+  11번 줄 삭제
+표 점검
+  IDLE 에서 도달할 수 없는 상태           : DESCEND
+  DONE 에 도달할 수 없는 상태 (교착 상태) : 없음
+  → 결함 있음 (r 로 초기화)
+…
+[ALIGN] > aligned
+  사건 aligned → 해당 줄 없음 → ALIGN 유지
+  (ALIGN 에서 표에 있는 사건: align_timeout)
+[ALIGN] > align_timeout
+  사건 align_timeout → 14번 줄 → LAND
+  (LAND 에서 표에 있는 사건: landed)
+```
+- `r` 로 초기화합니다. `r` 은 표와 상태를 함께 초기화하므로 줄을 삭제하고 시험할 때는 `r` 먼저, `del` 은 그 뒤에. 삭제해도 줄 번호는 처음 번호를 유지합니다(`t` 로 확인)
+- 안내만 출력될 때(알 수 없는 사건 · 한글 · 상태 이름 등)는 12주차 '막혔을 때' 표와 같습니다. `align` 은 상태 이름(`ALIGN`)이고 사건은 `aligned` · `align_timeout` — 앞부분 `al` 은 둘이 겹쳐 몇 글자 더 입력
+
+**24강** — 실행 파일(`w13_bridge` · `w13_mission` · `w13_state_viewer`)은 VM 확인 뒤 추가합니다.
+
 ## 4주차 커스텀 World
 ```bash
 # 1) PX4 월드 폴더로 복사 (PX4가 월드를 찾는 경로가 고정돼 있음)
@@ -838,9 +932,9 @@ drone_ros2_advanced/
     ├── week10/                # 거리 센서 · LiDAR 지형 추종 (lidar_bridge = w10_lidar_bridge · range_viewer = w10_range_viewer · terrain_follow_base = w10_terrain_follow)
     ├── week11/                # 2D LiDAR 장애물 감지 · 회피 (scan_bridge = w11_scan_bridge · scan_viewer = w11_scan_viewer · avoid_base = w11_avoid)
     ├── week12/                # 상태머신 미션 (mission_table = 전이 조건표 · fsm_sim = w12_fsm_sim · mission_base = w12_mission · state_view = 상태도 그림 · state_viewer = w12_state_viewer)
-    ├── week13/                # 추종 안정화 (통합 미션)
+    ├── week13/                # 통합 미션 (mission_table = 전이 조건표 14줄 · fsm_sim = w13_fsm_sim · state_view = 상태도 그림)
     ├── week14/                # 심화 (YOLO)
-    └── extras/                # 구 커리큘럼 자료 (참고용): GPS/지도(folium·flask 필요), 구 9주차 얼굴 추종 코드
+    └── extras/                # 구 커리큘럼 자료 (참고용): GPS/지도(folium·flask 필요), 구 9주차 얼굴 추종 코드, 구 13주차 추종 안정화 코드
 ```
 ※ 4주차는 파이썬 노드가 아니라 `worlds/` 의 SDF 파일이 실습 자산입니다.
 
