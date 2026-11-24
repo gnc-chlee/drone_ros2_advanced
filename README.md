@@ -1050,7 +1050,7 @@ gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construc
 ```
 drone_ros2_advanced/
 ├── config/waypoints.yaml      # 3주차~ waypoint 미션 설정
-├── worlds/                    # Gazebo World (PX4 폴더로 복사해 사용): 4주차 my_custom_world, 8주차 person_world + models/, 10주차 lidar_world, 11주차 obstacle_world, 13주차 parking_world + models/(sjcu_parking_markers · x500_lidar_2d_cam_down)
+├── worlds/                    # Gazebo World (PX4 폴더로 복사해 사용): 4주차 my_custom_world, 8주차 person_world + models/, 10주차 lidar_world, 11주차 obstacle_world, 13주차 parking_world + models/(sjcu_parking_markers · x500_lidar_2d_cam_down), 14주차 parking_number_world + models/sjcu_slot_numbers
 └── drone_ros2_advanced/
     ├── px4_base.py            # PX4Base 클래스 (base 버전의 부모)
     ├── week02/                # 노드 기초 + 키보드 제어

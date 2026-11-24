@@ -1,0 +1,41 @@
+<?xml version="1.0" ?>
+<!--
+  sjcu_slot_numbers - 주차칸 번호 그림 (흰 숫자 0~4, 14주차 25강 시연용)
+
+  - 그림 5장: materials/textures/number_0.png ~ number_4.png (RGBA 1024×768 px, 어두운 회색 바탕 + 흰 숫자)
+      모서리 반지름 0.6 m 밖은 투명 (Gazebo 는 그림의 알파를 쓴다) → 바닥에는 모서리가 둥근 판으로 보인다
+      네모난 어두운 판은 마커 인식(ArUco)이 마커 후보 사각형으로 읽는다 - 둥근 판은 후보가 되지 않는다
+  - parking_number_world.sdf 는 이 파일을 쓰지 않고 그림만 읽는다 (칸마다 다른 그림을 월드에 직접 적음)
+  - 이 파일은 0번 판 하나를 include 로 놓아 볼 때 쓴다 (4주차 방식):
+      <include><uri>model://sjcu_slot_numbers</uri><name>number_x</name><pose>5 3 0.002 0 0 0</pose></include>
+  - 판 2.0 × 1.5 m (x 2.0 · y 1.5). Gazebo 평면은 그림의 위쪽을 +y(북), 오른쪽을 +x(동)에 붙인다
+      → 그림 안의 숫자는 시계 방향으로 90° 누워 있다 = 바닥에서 숫자의 위쪽이 +x(동)를 향한다
+  - 글꼴: 나눔고딕 Bold (NanumGothic Bold, SIL Open Font License 1.1)
+-->
+<sdf version="1.9">
+  <model name="sjcu_slot_numbers">
+    <static>true</static>
+    <link name="link">
+      <visual name="visual">
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>2.0 1.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular>
+          <pbr>
+            <metal>
+              <albedo_map>model://sjcu_slot_numbers/materials/textures/number_0.png</albedo_map>
+              <roughness>1.0</roughness>
+              <metalness>0.0</metalness>
+            </metal>
+          </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

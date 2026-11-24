@@ -251,6 +251,35 @@ cd ~/PX4-Autopilot && PX4_SYS_AUTOSTART=4001 PX4_SIM_MODEL=gz_x500_lidar_2d_cam_
 - 마커 판 · 주차선 · 시작 표시는 그림만(`<visual>`) — 밟아도 턱이 없음. 그림자는 두 곳 모두 끔 (그림자 경계가 마커 위를 지나면 인식이 끊김)
 - 원점 스폰에서는 `w06_land` 를 쓰지 않습니다 — 고도 4 m 직선 이동이 높이 4 m 기둥을 스침
 
+## 14주차 번호 칸 월드 (parking_number_world.sdf)
+
+25강(통합 미션 프로젝트 시연)용. 13주차 주차장 월드 `parking_world` 에 칸 번호 판 5개(흰 숫자 0~4)를 더한 월드입니다 — 번호 판 말고는 `parking_world` 와 같습니다 (Fuel 불필요).
+
+```bash
+# 한 번만: 월드 1개 + 번호 그림 폴더를 PX4 로 복사 (13주차에 models/ 를 복사한 VM 기준)
+cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+cp parking_number_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+cp -r models/sjcu_slot_numbers ~/PX4-Autopilot/Tools/simulation/gz/models/
+ls ~/PX4-Autopilot/Tools/simulation/gz/models | grep -E "sjcu_slot_numbers|sjcu_parking_markers|x500_lidar_2d_cam_down"     # 세 줄
+# 실행 (13주차 명령에서 월드 이름만 다름 — 남은 Gazebo 서버를 먼저 정리)
+pkill -9 -f "gz sim"
+cd ~/PX4-Autopilot && PX4_SYS_AUTOSTART=4001 PX4_SIM_MODEL=gz_x500_lidar_2d_cam_down PX4_GZ_WORLD=parking_number_world ./build/px4_sitl_default/bin/px4
+# N번 칸으로 보내기 — 터미널 4 · 5 에 같은 번호 (예: 2번 칸)
+ros2 run drone_ros2_advanced w05_aruco --ros-args -p target_marker_id:=2
+ros2 run drone_ros2_advanced w13_mission --ros-args -p fly:=true -p target_slot:=2
+```
+
+- `ls … | grep` 이 세 줄이 아니면(13주차 복사를 하지 않은 VM): `cp -r models/* ~/PX4-Autopilot/Tools/simulation/gz/models/` 로 모델 폴더 전부 (마커 그림 · 합성 기체도 필요)
+
+| 모델 | `<pose>` (ENU) | 크기 (x·y) | 범위 |
+|------|------|------|------|
+| `parking_number_0` ~ `_4` (번호 판) | 12.0 + 3.5 × N, 1.65, 0.012 | 2.0 × 1.5 m 평면 (그림만 — 충돌 없음, 모서리 둥금) | N번 칸 = 동 (11.0~13.0) + 3.5 × N, 북 0.9~2.4 (마커와 노란 앞줄 사이) |
+
+- 칸 중앙 = 마커 중심 = 목표 지점: 동 12.0 · 15.5 · 19.0 · 22.5 · 26.0 m, 북 0 (13주차와 같음)
+- 숫자의 위쪽이 동쪽을 향합니다 → 서쪽에서 날아오는 드론의 아래 카메라 화면(위 = 기체 앞 = 동)과 드론 뒤에서 본 Gazebo 화면에서 바로 읽힘. Gazebo 평면은 그림의 위쪽을 북(+y), 오른쪽을 동(+x)에 붙이므로 그림 파일 안에서는 숫자가 시계 방향으로 90° 누워 있습니다
+- 번호 판은 바닥 그림이라 2D LiDAR 스캔(땅 위 약 2.3 m)에 잡히지 않습니다. 모서리가 둥근 까닭: 네모난 어두운 판은 마커 인식(ArUco)이 마커 후보 사각형으로 읽습니다 — 둥근 판은 후보가 되지 않음
+- 터미널 3 `w13_bridge` 의 시작 줄 앞에 `[안내] 월드 = parking_number_world — 24강 미션 월드는 parking_world …` 한 줄이 나옵니다 — 이 월드에서는 정상 (연결은 그대로)
+
 ## 자주 나는 오류
 
 | 증상 | 원인 | 해결 |

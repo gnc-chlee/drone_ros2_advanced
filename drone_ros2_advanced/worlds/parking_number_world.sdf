@@ -1,0 +1,720 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ============================================================================
+  parking_number_world.sdf  (14주차 25강 시연 - 13주차 parking_world + 칸 번호 판 5개)
+
+  13주차 parking_world.sdf 를 그대로 복사하고, 주차칸마다 큰 흰 숫자(0~4)를 그린 바닥 판을 하나씩 더한 월드입니다.
+  번호 판 말고는 parking_world 와 같습니다 (기둥 · 남쪽 벽 · 주차 바닥 · 주차선 · 마커 · 건물 · 시작 표시의 자리 · 크기 · 색).
+  Fuel(온라인 모델)을 쓰지 않아 인터넷 없이 뜹니다.
+
+  드론은 원점에서 머리를 동쪽(+x)으로 두고 뜹니다 (PX4 v1.16 은 스폰 방향을 바꿀 수 없음).
+  동쪽 직선 코스(북 0) 위에 기둥과 마커 5개가 한 줄로, 그 왼쪽(북쪽)에 번호 판 5개가 한 줄로 놓여 있습니다.
+
+       북 +3     . . . . . . . . . . . ___ 노란 선 (동 10.25~27.75) ___________________
+       북 +1.65                             |  0  |  1  |  2  |  3  |  4  |   ← 번호 판 (숫자 위쪽 = 동쪽)
+       북  0     원점(드론) ───▶ [기둥] ───▶ | [0] | [1] | [2] | [3] | [4] |   ← 칸 번호 = 마커 ID
+                                 동 5.5~6.5     동 12  15.5   19   22.5   26     (칸 폭 3.5 m)
+       북 -3     ===== 남쪽 벽 (동 2~13 m, 북쪽 면 = 북 -3.0 m) =====
+
+  N번 칸 중앙 = 마커 중심 = 동 (12 + 3.5 × N) m, 북 0 m   →   PX4 좌표로는 (북 0, 동 12 + 3.5 × N)
+    0번 = 동 12.0 · 1번 = 15.5 · 2번 = 19.0 · 3번 = 22.5 · 4번 = 26.0
+  N번 칸 번호 판 = 가운데 (동 12 + 3.5 × N, 북 1.65) 인 2.0 × 1.5 m 판, 모서리 둥금 (마커와 노란 앞줄 사이)
+    숫자의 위쪽이 동쪽을 향한다 → 서쪽에서 날아오는 드론의 아래 카메라 화면(위쪽 = 기체 앞 = 동쪽)과
+    드론 뒤(서쪽)에서 본 Gazebo 화면에서 바로 읽힌다
+
+  마커: ArUco DICT_4X4_50 의 ID 0~4, 판 0.6 × 0.6 m (흰 여백을 뺀 검은 테두리 바깥 한 변 약 0.46 m)
+
+  ★ 규칙 (4주차와 같음) ★
+    - 파일 이름(parking_number_world.sdf) = <world name="parking_number_world">
+      (다르면 PX4 가 "Timed out waiting for Gazebo world" 를 내며 종료)
+    - <world> 바로 아래에 <plugin> 을 쓰지 않는다 (PX4 server.config 자동 적용이 취소됨)
+    - 솟아 있는 물체(기둥 · 벽 · 건물 · 주차 바닥)에는 <collision> 을 넣는다 (없으면 드론이 통과)
+      바닥에 그린 것(시작 표시 · 주차선 · 마커 · 번호 판)은 <visual> 만 둔다 (밟아도 턱이 없게, PX4 arucotag 와 같은 방식)
+    - <pose> 의 z 는 모델 원점 높이 → 높이 4.0 m 기둥은 z = 2.0 (높이의 절반)
+    - 그림자는 두 곳 모두 false (person_world 와 같음) - 벽 · 기체 그림자의 경계가 마커 위를 지나면 인식이 끊긴다
+
+  설치 (한 번만) - 월드 1개 + 번호 그림 폴더를 PX4 로 복사 (13주차에 모델 폴더를 복사한 VM 기준):
+    cd ~/ros2_ws/src/drone_ros2_advanced/drone_ros2_advanced/worlds
+    cp parking_number_world.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+    cp -r models/sjcu_slot_numbers ~/PX4-Autopilot/Tools/simulation/gz/models/
+    ls ~/PX4-Autopilot/Tools/simulation/gz/models/sjcu_slot_numbers/materials/textures    (number_0.png ~ number_4.png)
+    13주차 복사를 하지 않은 VM 이면 cp -r models/* 로 모델 폴더 전부 (마커 그림 · 합성 기체도 필요)
+
+  실행 (13주차 합성 기체 = 2D LiDAR + 아래 카메라. 13주차 명령에서 월드 이름만 다름):
+    pkill -9 -f "gz sim"
+    cd ~/PX4-Autopilot && PX4_SYS_AUTOSTART=4001 PX4_SIM_MODEL=gz_x500_lidar_2d_cam_down PX4_GZ_WORLD=parking_number_world ./build/px4_sitl_default/bin/px4
+    N번 칸으로 보내기: 마커 인식(w05_aruco)의 target_marker_id 와 미션 노드(w13_mission)의 target_slot 에 같은 번호 N
+      (명령 전체는 worlds/README.md 의 14주차 절)
+
+  월드를 바꿀 때 (이전 Gazebo 서버가 남아 있으면 이전 월드가 다시 뜸):
+    pkill -9 -f "gz sim"   →   pgrep -af "gz sim" 이 빈 줄인지 확인 후 다시 실행
+
+  좌표 주의 (4주차 핵심):
+    Gazebo <pose> 는 ENU = x(동) y(북) z(위)
+    PX4  위치     는 NED = x(북) y(동) z(아래)
+
+  출처: 주차장 배치 · 마커 그림 = 이충현 (px4-ros2-ai-drone, MIT) / 기둥 · 남쪽 벽 = obstacle_world.sdf
+        번호 그림 = 나눔고딕 Bold 글꼴로 그림 (NanumGothic Bold, SIL Open Font License 1.1)
+  ============================================================================
+-->
+<sdf version="1.9">
+  <world name="parking_number_world">
+
+    <!-- ===== 여기부터 ===== PX4 기본 월드에서 그대로 가져온 부분 [복붙 영역]
+         (obstacle_world 와 같고, 그림자 두 곳만 false - person_world 와 같은 방법) -->
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+    <scene>
+      <grid>false</grid>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>false</shadows>
+    </scene>
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1 1</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 -0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 -0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0 0 0 0 -0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <light name="sunUTC" type="directional">
+      <pose>0 0 500 0 -0 0</pose>
+      <cast_shadows>false</cast_shadows>
+      <intensity>1</intensity>
+      <direction>0.001 0.625 -0.78</direction>
+      <diffuse>0.904 0.904 0.904 1</diffuse>
+      <specular>0.271 0.271 0.271 1</specular>
+      <attenuation>
+        <range>2000</range>
+        <linear>0</linear>
+        <constant>1</constant>
+        <quadratic>0</quadratic>
+      </attenuation>
+      <spot>
+        <inner_angle>0</inner_angle>
+        <outer_angle>0</outer_angle>
+        <falloff>0</falloff>
+      </spot>
+    </light>
+    <!-- ===== 여기까지 ===== [복붙 영역] 끝 -->
+
+    <!-- 시뮬레이션의 GPS 원점 (세종사이버대학교) - obstacle_world 와 같음 -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>37.551187</latitude_deg>
+      <longitude_deg>127.073880</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+
+    <!-- ========================================================
+         시작 표시 - 원점의 빨간 원 (반지름 2 m, 두께 2 mm)
+         - 드론이 뜨는 자리를 보여 주는 그림일 뿐이라 <collision> 이 없다 (드론은 땅 위에 그대로 선다)
+         ======================================================== -->
+    <model name="start_pad">
+      <static>true</static>
+      <pose>0 0 0.001 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <cylinder>
+              <radius>2.0</radius>
+              <length>0.002</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.8 0.2 0.2 1</ambient>
+            <diffuse>0.8 0.2 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========================================================
+         기둥 1개 - 동쪽 6 m, 코스(북 0) 한가운데   (obstacle_world 와 같은 자리 · 크기)
+         - <pose>6.0 0 2.0 0 0 0 : x(동) 6.0, y(북) 0, z = 높이 4.0 의 절반
+             → 동쪽 5.5~6.5 m, 북쪽 -0.5~0.5 m, 높이 0~4.0 m
+         - 높이 4 m: 2D LiDAR 스캔 평면(상대 고도 2 m 에서 땅 위 약 2.3 m)보다 충분히 높음
+         ======================================================== -->
+    <model name="pillar">
+      <static>true</static>
+      <pose>6.0 0 2.0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>1 1 4</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1 1 4</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.5 0.2 1</ambient>
+            <diffuse>0.9 0.5 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========================================================
+         남쪽 벽 1개 - 오른쪽(남쪽)을 좁게 만들어 '넓은 쪽 = 왼쪽' 이 되게 함   (obstacle_world 와 같은 자리 · 크기)
+         - <pose>7.5 -3.1 2.0 0 0 0 : 동 7.5, 북 -3.1 (두께 0.2 → 북쪽 면이 북 -3.0), z = 높이 4.0 의 절반
+             → 동쪽 2~13 m, 북쪽 면 = 북 -3.0 m
+         - 동쪽 끝 3.5 m (동 9.5~13)는 주차 바닥의 남쪽 여백 위에 선다 (0번 칸 뒤 담장처럼 보임)
+         - 이 벽이 없으면 기둥 앞에서 오른쪽(남쪽)이 왼쪽보다 넓거나 같아져 남쪽으로 돈다 (11·12주차와 반대 방향)
+         ======================================================== -->
+    <model name="south_wall">
+      <static>true</static>
+      <pose>7.5 -3.1 2.0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>11 0.2 4</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>11 0.2 4</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.65 1</ambient>
+            <diffuse>0.6 0.6 0.65 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========================================================
+         주차 바닥 - 어두운 회색 판 19 × 7 m, 두께 1 cm   (교수 월드의 parking_floor 를 옮긴 것)
+         - <pose>19 0 0.005 0 0 0 → 동쪽 9.5~28.5 m, 북쪽 -3.5~+3.5 m, 윗면 높이 1 cm
+         - 드론이 이 위에 착륙하므로 <collision> 이 있다
+         - 색 0.45 (어두운 회색): 마커의 흰 여백과 뚜렷이 구별된다
+         ======================================================== -->
+    <model name="parking_floor">
+      <static>true</static>
+      <pose>19 0 0.005 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>19 7 0.01</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>19 7 0.01</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.45 0.45 0.45 1</ambient>
+            <diffuse>0.45 0.45 0.45 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========================================================
+         주차선 6개 (흰색, 남북으로 6 m) - 칸 폭 3.5 m
+         - 동 10.25 · 13.75 · 17.25 · 20.75 · 24.25 · 27.75 m, 북 -3.0~+3.0 m
+         - 바닥 윗면(1 cm)보다 조금 위(z 1.2 cm)에 그린 그림이라 <collision> 이 없다
+         ======================================================== -->
+    <model name="parking_line_0">
+      <static>true</static>
+      <pose>10.25 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.1 6.0 0.001</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_line_1">
+      <static>true</static>
+      <pose>13.75 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.1 6.0 0.001</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_line_2">
+      <static>true</static>
+      <pose>17.25 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.1 6.0 0.001</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_line_3">
+      <static>true</static>
+      <pose>20.75 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.1 6.0 0.001</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_line_4">
+      <static>true</static>
+      <pose>24.25 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.1 6.0 0.001</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_line_5">
+      <static>true</static>
+      <pose>27.75 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.1 6.0 0.001</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 주차장 앞 가로선 (노란색, 동서로 17.5 m) - 북 +3.0 m
+         흰 선의 끝과 겹치는 자리가 깜빡이지 않게 흰 선보다 2 mm 위(z 1.4 cm)에 그린다 -->
+    <model name="parking_front_line">
+      <static>true</static>
+      <pose>19 3.0 0.014 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>17.5 0.1 0.001</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>1 1 0 1</ambient>
+            <diffuse>1 1 0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========================================================
+         ArUco 마커 5개 - 각 칸 한가운데 바닥   (칸 번호 = 마커 ID)
+         - 판 0.6 × 0.6 m 평면, 바닥 윗면보다 2 mm 위 (z 1.2 cm)   ← PX4 arucotag 모델과 같은 방식
+         - 그림: model://sjcu_parking_markers/materials/textures/marker_N.png
+             (DICT_4X4_50 의 ID N, 520 × 520 px, 흰 여백 60 px → 검은 테두리 바깥 한 변 = 0.6 × 400/520 = 약 0.46 m)
+         - roughness 1.0 · metalness 0.0: 번들거리지 않는 종이처럼 (반사 얼룩이 생기면 인식이 끊긴다)
+         - N번 칸 <pose> x = 12 + 3.5 × N   → PX4 좌표 (북 0, 동 12 + 3.5 × N)
+         ======================================================== -->
+    <model name="parking_marker_0">
+      <static>true</static>
+      <pose>12.0 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.6 0.6</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0 0 0 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>model://sjcu_parking_markers/materials/textures/marker_0.png</albedo_map>
+                <roughness>1.0</roughness>
+                <metalness>0.0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_marker_1">
+      <static>true</static>
+      <pose>15.5 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.6 0.6</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0 0 0 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>model://sjcu_parking_markers/materials/textures/marker_1.png</albedo_map>
+                <roughness>1.0</roughness>
+                <metalness>0.0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_marker_2">
+      <static>true</static>
+      <pose>19.0 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.6 0.6</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0 0 0 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>model://sjcu_parking_markers/materials/textures/marker_2.png</albedo_map>
+                <roughness>1.0</roughness>
+                <metalness>0.0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_marker_3">
+      <static>true</static>
+      <pose>22.5 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.6 0.6</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0 0 0 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>model://sjcu_parking_markers/materials/textures/marker_3.png</albedo_map>
+                <roughness>1.0</roughness>
+                <metalness>0.0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_marker_4">
+      <static>true</static>
+      <pose>26.0 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.6 0.6</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0 0 0 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>model://sjcu_parking_markers/materials/textures/marker_4.png</albedo_map>
+                <roughness>1.0</roughness>
+                <metalness>0.0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========================================================
+         칸 번호 판 5개 - 각 칸의 마커와 노란 앞줄 사이 바닥   (이 월드에서 더한 것 - 나머지는 parking_world 와 같음)
+         - 판 2.0 × 1.5 m 평면 (동서 2.0 · 남북 1.5), 바닥 윗면보다 2 mm 위 (z 1.2 cm)   ← 마커 판과 같은 방식
+         - <pose> x = 12 + 3.5 × N (칸의 동서 가운데), y = 1.65
+             → 동 (11.0~13.0) + 3.5 × N, 북 0.9~2.4 m
+             마커(북 -0.3~0.3) · 노란 앞줄(북 2.95~3.05) · 주차선(가장 가까운 선까지 0.7 m)과 겹치지 않음
+         - 그림: model://sjcu_slot_numbers/materials/textures/number_N.png (1024 × 768 px, 어두운 회색 바탕 + 흰 숫자)
+             Gazebo 평면은 그림의 위쪽을 북쪽(+y), 오른쪽을 동쪽(+x)에 붙인다
+             → 그림 안의 숫자는 시계 방향으로 90° 누워 있고, 바닥에서는 숫자의 위쪽이 동쪽을 향한다
+         - 판 모서리는 둥글다 (반지름 0.6 m 밖은 그림의 투명 부분 → 바닥이 보임)
+             네모난 어두운 판은 마커 인식(ArUco)이 마커 후보 사각형으로 읽는다 - 둥근 판은 후보가 되지 않는다
+         - roughness 1.0 · metalness 0.0: 번들거리지 않는 페인트처럼
+         - 그림만 (<visual>) - 충돌 없음. 2D LiDAR 스캔 평면(땅 위 약 2.3 m)보다 한참 낮아 스캔에 잡히지 않는다
+         ======================================================== -->
+    <model name="parking_number_0">
+      <static>true</static>
+      <pose>12.0 1.65 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>2.0 1.5</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0 0 0 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>model://sjcu_slot_numbers/materials/textures/number_0.png</albedo_map>
+                <roughness>1.0</roughness>
+                <metalness>0.0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_number_1">
+      <static>true</static>
+      <pose>15.5 1.65 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>2.0 1.5</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0 0 0 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>model://sjcu_slot_numbers/materials/textures/number_1.png</albedo_map>
+                <roughness>1.0</roughness>
+                <metalness>0.0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_number_2">
+      <static>true</static>
+      <pose>19.0 1.65 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>2.0 1.5</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0 0 0 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>model://sjcu_slot_numbers/materials/textures/number_2.png</albedo_map>
+                <roughness>1.0</roughness>
+                <metalness>0.0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_number_3">
+      <static>true</static>
+      <pose>22.5 1.65 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>2.0 1.5</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0 0 0 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>model://sjcu_slot_numbers/materials/textures/number_3.png</albedo_map>
+                <roughness>1.0</roughness>
+                <metalness>0.0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="parking_number_4">
+      <static>true</static>
+      <pose>26.0 1.65 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>2.0 1.5</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0 0 0 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>model://sjcu_slot_numbers/materials/textures/number_4.png</albedo_map>
+                <roughness>1.0</roughness>
+                <metalness>0.0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========================================================
+         건물 1채 - 주차장 북쪽의 회색 상자 10 × 6 × 8 m   (교수 월드의 building_1 을 옮긴 것, 풍경)
+         - <pose>21 23.5 4.0 0 0 0 : z = 높이 8.0 의 절반 → 동쪽 16~26 m, 북쪽 20.5~26.5 m, 높이 0~8 m
+         - 코스에서 20 m 넘게 떨어져 있어 비행에는 걸리지 않는다
+         - 2D LiDAR(30 m)에는 잡힌다: 왼쪽 섹터가 '자유 공간' 대신 약 20~26 m 로 찍힌다
+             (11·12주차와 똑같이 '왼쪽 자유 공간' 으로 두려면 y 를 38 로 - 남쪽 면 북 35 m, 30 m 밖)
+         ======================================================== -->
+    <model name="building_1">
+      <static>true</static>
+      <pose>21 23.5 4.0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>10 6 8</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>10 6 8</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>
